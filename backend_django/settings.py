@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,10 +22,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-(@9ht6wf4f7*q86ns+@_tiqjk8o9&7j5)$o2-%z1t*0aat7=jf'
+# Load environment variables from .env; handle non-UTF-8 encodings properly.
+try:
+    load_dotenv()
+except UnicodeDecodeError:
+    # Some editors save .env as UTF-16; try that encoding as a fallback.
+    load_dotenv(encoding='utf-16')
+
+# Prefer SECRET_KEY from environment, fall back to the existing insecure key for local dev
+# SECRET_KEY = 'django-insecure-(@9ht6wf4f7*q86ns+@_tiqjk8o9&7j5)$o2-%z1t*0aat7=jf'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = []
 
