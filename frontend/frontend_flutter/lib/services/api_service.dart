@@ -13,19 +13,16 @@ class ApiService {
   final TokenService _tokenService = TokenService();
   VoidCallback? onUnauthenticated;
 
-  /// Dynamic Base URL Resolution based on Target Platform
   static String get baseUrl {
     if (kIsWeb) {
       return 'http://127.0.0.1:8000/api/v1';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api/v1'; // Android emulator localhost alias
+      return 'http://10.0.2.2:8000/api/v1';
     } else {
-      return 'http://127.0.0.1:8000/api/v1'; // iOS / Desktop
+      return 'http://127.0.0.1:8000/api/v1';
     }
   }
 
-  /// Supports runtime overrides via compile-time flag:
-  /// flutter run --dart-define=BASE_URL=http://192.168.1.15:8000/api/v1
   static String get configuredBaseUrl {
     const envUrl = String.fromEnvironment('BASE_URL');
     return envUrl.isNotEmpty ? envUrl : baseUrl;
@@ -90,7 +87,7 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode == 201) {
+    if (response.statusCode == 201 || response.statusCode == 200) {
       return ClassroomModel.fromJson(jsonDecode(response.body));
     } else {
       throw Exception('Failed to create classroom');
@@ -143,8 +140,8 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode == 201) {
-      throw Exception('Failed to submit attendance');
+    if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
+      throw Exception('Failed to submit attendance (${response.statusCode}): ${response.body}');
     }
   }
 
@@ -159,8 +156,8 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode == 201) {
-      throw Exception('Failed to submit student grades');
+    if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
+      throw Exception('Failed to submit student grades (${response.statusCode}): ${response.body}');
     }
   }
 }

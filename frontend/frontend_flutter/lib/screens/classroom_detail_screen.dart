@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:frontend_flutter/screens/attendance_screen.dart';
+import 'package:frontend_flutter/screens/student_grade_batch_screen.dart';
 import '../models/classroom_model.dart';
 import '../models/student_model.dart';
 import '../providers/app_providers.dart';
-import 'attendance_screen.dart';
-import 'student_grade_batch_screen.dart';
 
 class ClassroomDetailScreen extends ConsumerStatefulWidget {
   final ClassroomModel classroom;
@@ -43,7 +43,6 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
   }
 
   String _formatPercentage(double value) {
-    // If backend returns a decimal (0.0 to 1.0), scale it to 0-100%
     final normalized = (value <= 1.0 && value > 0.0) ? value * 100 : value;
     return '${normalized.toStringAsFixed(1)}%';
   }
@@ -252,6 +251,16 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
       appBar: AppBar(
         title: Text(widget.classroom.name),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today_outlined),
+            tooltip: 'Attendance',
+            onPressed: _navigateToAttendance,
+          ),
+          IconButton(
+            icon: const Icon(Icons.grade_outlined),
+            tooltip: 'Batch Grading',
+            onPressed: _navigateToGrading,
+          ),
           if (_hasUnsavedChanges)
             IconButton(
               icon: _isSaving
