@@ -48,3 +48,39 @@ class Student(models.Model):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.grade_level.grade_level_name})"
+
+
+class AttendanceSession(models.Model):
+    classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name='attendance_sessions')
+    date = models.DateField()
+    remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('classroom', 'date')
+
+class StudentAttendance(models.Model):
+    STATUS_CHOICES = [
+        ('PRESENT', 'Present'),
+        ('ABSENT', 'Absent'),
+        ('LATE', 'Late'),
+        ('EXCUSED', 'Excused'),
+    ]
+    session = models.ForeignKey(AttendanceSession, on_delete=models.CASCADE, related_name='records')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='attendance_records')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PRESENT')
+    notes = models.CharField(max_length=255, blank=True, null=True)
+
+    class Meta:
+        unique_together = ('session', 'student')
+
+
+class StudentGrade(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='grades')
+    # Points to the specific grading task defined in the lesson plan
+    grading_task = models.ForeignKey('curriculum.LessonGrading', on_delete=models.CASCADE, related_name='student_grades')
+    score = models.DecimalField(max_digits=5, decimal_places=2)  # e.g., 8.50 / 10.00
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    feedback = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('student', 'grading_task')
