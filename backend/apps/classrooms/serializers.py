@@ -22,12 +22,25 @@ class LessonPlanReadSerializer(serializers.ModelSerializer):
 
 
 class StudentSerializer(serializers.ModelSerializer):
-    """Nested student record within a classroom."""
+    """Nested student record within a classroom with optional aggregate metrics."""
     gl_id = serializers.IntegerField(source='grade_level_id')
+    
+    # Read-only float fields populated by QuerySet annotations
+    attendance_rate = serializers.FloatField(read_only=True, default=0.0)
+    grade_avg = serializers.FloatField(read_only=True, default=0.0)
 
     class Meta:
         model = Student
-        fields = ['student_id', 'gl_id', 'first_name', 'last_name', 'gender', 'lrn']
+        fields = [
+            'student_id', 
+            'gl_id', 
+            'first_name', 
+            'last_name', 
+            'gender', 
+            'lrn', 
+            'attendance_rate', 
+            'grade_avg'
+        ]
 
 
 class ClassroomSerializer(serializers.ModelSerializer):
@@ -42,7 +55,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     
-    # Nested Write Field for Students
+    # Nested Write/Read Field for Students
     students = StudentSerializer(many=True, required=False)
 
     # Read-only Expansion details
