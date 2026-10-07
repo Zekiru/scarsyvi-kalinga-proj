@@ -23,6 +23,7 @@ class LessonPlanReadSerializer(serializers.ModelSerializer):
 
 class StudentSerializer(serializers.ModelSerializer):
     """Nested student record within a classroom with optional aggregate metrics."""
+    student_id = serializers.IntegerField(required=False, allow_null=True)
     gl_id = serializers.IntegerField(source='grade_level_id')
     
     # Read-only float fields populated by QuerySet annotations
@@ -109,13 +110,42 @@ class ClassroomSerializer(serializers.ModelSerializer):
             instance.grade_levels.set(grade_level_ids)
 
         if students_data is not None:
-            instance.students.all().delete()
-            self._save_students(instance, students_data)
+            existing_students = {s.student_id: s for s in instance.students.all()}
+            retained_student_ids = []
+
+            for student_item in students_data:
+                student_id = student_item.get('student_id')
+                gl_id = student_item.pop('grade_level_id')
+
+                if student_id and student_id in existing_students:
+                    # UPDATE EXISTING STUDENT IN-PLACE
+                    student_obj = existing_students[student_id]
+                    student_obj.grade_level_id = gl_id
+                    for attr, val in student_item.items():
+                        if attr != 'student_id':
+                            setattr(student_obj, attr, val)
+                    student_obj.save()
+                    retained_student_ids.append(student_obj.student_id)
+                else:
+                    # CREATE NEW STUDENT
+                    student_item.pop('student_id', None)
+                    new_student = Student.objects.create(
+                        classroom=instance,
+                        grade_level_id=gl_id,
+                        **student_item
+                    )
+                    retained_student_ids.append(new_student.student_id)
+
+            # DELETE ONLY STUDENTS REMOVED FROM ROSTER
+            for s_id, student_obj in existing_students.items():
+                if s_id not in retained_student_ids:
+                    student_obj.delete()
 
         return instance
 
     def _save_students(self, classroom, students_data):
         for student_item in students_data:
+            student_item.pop('student_id', None)
             gl_id = student_item.pop('grade_level_id')
             Student.objects.create(
                 classroom=classroom,
