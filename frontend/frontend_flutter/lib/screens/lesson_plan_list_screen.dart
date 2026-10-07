@@ -110,13 +110,31 @@ class LessonPlanListScreen extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
+                              icon: const Icon(Icons.copy_rounded, color: Colors.teal),
+                              tooltip: 'Clone Plan',
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => LessonPlanFormScreen(
+                                      lessonPlan: plan,
+                                      isCloning: true,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
                               icon: const Icon(Icons.edit_outlined, color: Colors.blue),
                               tooltip: 'Edit Plan',
                               onPressed: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => LessonPlanFormScreen(lessonPlan: plan),
+                                    builder: (_) => LessonPlanFormScreen(
+                                      lessonPlan: plan,
+                                      isCloning: false,
+                                    ),
                                   ),
                                 );
                               },

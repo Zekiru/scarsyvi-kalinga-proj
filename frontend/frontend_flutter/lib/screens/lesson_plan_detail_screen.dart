@@ -20,13 +20,31 @@ class LessonPlanDetailScreen extends StatelessWidget {
         elevation: 1,
         actions: [
           IconButton(
+            icon: const Icon(Icons.copy_rounded),
+            tooltip: 'Clone & Adapt Plan',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LessonPlanFormScreen(
+                    lessonPlan: lessonPlan,
+                    isCloning: true,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Edit Lesson Plan',
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => LessonPlanFormScreen(lessonPlan: lessonPlan),
+                  builder: (_) => LessonPlanFormScreen(
+                    lessonPlan: lessonPlan,
+                    isCloning: false,
+                  ),
                 ),
               );
             },

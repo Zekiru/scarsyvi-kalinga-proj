@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/lesson_plan_model.dart';
 import '../models/lesson_grade_level_model.dart';
+import '../models/lesson_grading_model.dart';
 import '../providers/app_providers.dart';
 
 class LessonPlanFormScreen extends ConsumerStatefulWidget {
   final LessonPlanModel? lessonPlan;
+  final bool isCloning;
 
-  const LessonPlanFormScreen({super.key, this.lessonPlan});
+  const LessonPlanFormScreen({
+    super.key, 
+    this.lessonPlan, 
+    this.isCloning = false,
+  });
 
   @override
   ConsumerState<LessonPlanFormScreen> createState() => _LessonPlanFormScreenState();
@@ -31,7 +37,13 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
   void initState() {
     super.initState();
     final lp = widget.lessonPlan;
-    _titleController = TextEditingController(text: lp?.lpTitle ?? '');
+    final isCloning = widget.isCloning;
+
+    final initialTitle = lp != null
+        ? (isCloning ? '${lp.lpTitle} (Copy)' : lp.lpTitle)
+        : '';
+
+    _titleController = TextEditingController(text: initialTitle);
     _learningAreaController = TextEditingController(text: lp?.learningArea ?? '');
     _primaryLanguageController = TextEditingController(text: lp?.primaryLanguage ?? 'English');
     _suggestedDemographicController = TextEditingController(text: lp?.suggestedDemographic ?? '');
@@ -40,7 +52,9 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
     _notesController = TextEditingController(text: lp?.notes ?? '');
 
     if (lp != null && lp.gradeLevels.isNotEmpty) {
-      _gradeLevelStates = lp.gradeLevels.map((gl) => _GradeLevelFormState.fromModel(gl)).toList();
+      _gradeLevelStates = lp.gradeLevels
+          .map((gl) => _GradeLevelFormState.fromModel(gl, isCloning: isCloning))
+          .toList();
     } else {
       _gradeLevelStates = [_GradeLevelFormState(glId: 1)];
     }
@@ -76,7 +90,7 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
     });
   }
 
-  Future<void> _saveLessonPlan() async {
+  Future<void> _saveLessonPlan({bool forceClone = false}) async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_gradeLevelStates.isEmpty) {
@@ -88,10 +102,14 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
 
     setState(() => _isSubmitting = true);
 
+    final isCloningMode = widget.isCloning || forceClone;
     final compiledGradeLevels = _gradeLevelStates.map((glState) => glState.toModel()).toList();
 
+    // Set lpId to null when creating or cloning to trigger POST endpoint
+    final targetLpId = isCloningMode ? null : widget.lessonPlan?.lpId;
+
     final payload = LessonPlanModel(
-      lpId: widget.lessonPlan?.lpId,
+      lpId: targetLpId,
       lpTitle: _titleController.text.trim(),
       learningArea: _learningAreaController.text.trim(),
       primaryLanguage: _primaryLanguageController.text.trim(),
@@ -104,7 +122,7 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
 
     try {
       final api = ref.read(apiServiceProvider);
-      if (widget.lessonPlan?.lpId == null) {
+      if (targetLpId == null) {
         await api.createLessonPlan(payload);
       } else {
         await api.updateLessonPlan(payload);
@@ -115,9 +133,11 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.lessonPlan == null
-                  ? 'Lesson plan created successfully!'
-                  : 'Lesson plan updated successfully!',
+              isCloningMode
+                  ? 'Lesson plan cloned successfully!'
+                  : widget.lessonPlan == null
+                      ? 'Lesson plan created successfully!'
+                      : 'Lesson plan updated successfully!',
             ),
           ),
         );
@@ -139,23 +159,38 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isEditing = widget.lessonPlan != null;
+    final titleText = widget.isCloning
+        ? 'Clone & Adapt Lesson Plan'
+        : (widget.lessonPlan != null ? 'Edit Lesson Plan' : 'Create Lesson Plan');
+
+    final fabLabelText = widget.isCloning
+        ? 'Save Cloned Plan'
+        : (widget.lessonPlan != null ? 'Update Lesson Plan' : 'Create Lesson Plan');
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'Edit Lesson Plan' : 'Create Lesson Plan'),
+        title: Text(titleText),
+        actions: [
+          // Non-destructive add: Quick Clone action directly in App Bar when editing existing plan
+          if (widget.lessonPlan != null && !widget.isCloning)
+            IconButton(
+              icon: const Icon(Icons.copy_rounded),
+              tooltip: 'Clone as New Plan',
+              onPressed: _isSubmitting ? null : () => _saveLessonPlan(forceClone: true),
+            ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        heroTag: null, // Unique hero tag
-        onPressed: _isSubmitting ? null : _saveLessonPlan,
+        heroTag: 'lessonPlanFormSubmitFab',
+        onPressed: _isSubmitting ? null : () => _saveLessonPlan(),
         icon: _isSubmitting
             ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               )
-            : const Icon(Icons.save),
-        label: Text(isEditing ? 'Update Lesson Plan' : 'Create Lesson Plan'),
+            : Icon(widget.isCloning ? Icons.copy_all : Icons.save),
+        label: Text(fabLabelText),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -232,7 +267,6 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Sub-forms for each grade level
               ..._gradeLevelStates.map((glState) {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -282,7 +316,128 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
                           controller: glState.enrichmentCtrl,
                           decoration: const InputDecoration(labelText: 'Enrichment Guidelines', border: OutlineInputBorder()),
                         ),
+                        const SizedBox(height: 16),
+
+                        // --- Nested Grading Tasks List ---
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Grading Tasks',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.indigo),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  glState.gradingTasks.add(_GradingTaskFormState());
+                                });
+                              },
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Add Task'),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 8),
+
+                        ...glState.gradingTasks.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final taskState = entry.value;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8.0),
+                            padding: const EdgeInsets.all(8.0),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(6.0),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: taskState.taskNameCtrl,
+                                        decoration: InputDecoration(
+                                          labelText: 'Task Name #${idx + 1}',
+                                          border: const OutlineInputBorder(),
+                                          isDense: true,
+                                        ),
+                                        validator: (val) {
+                                          if (glState.gradingTasks.length > 1 && (val == null || val.trim().isEmpty)) {
+                                            return 'Task name required';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    if (glState.gradingTasks.length > 1)
+                                      IconButton(
+                                        icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                                        onPressed: () {
+                                          setState(() {
+                                            taskState.dispose();
+                                            glState.gradingTasks.removeAt(idx);
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  controller: taskState.taskDescCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Task Description',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: taskState.gradeWeightCtrl,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        decoration: const InputDecoration(
+                                          labelText: 'Grade Weight (e.g. 1.0)',
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                        ),
+                                        validator: (val) {
+                                          if (val != null && val.isNotEmpty && double.tryParse(val) == null) {
+                                            return 'Invalid decimal';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: taskState.maxScoreCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Max Score',
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                        ),
+                                        validator: (val) {
+                                          if (val != null && val.isNotEmpty && int.tryParse(val) == null) {
+                                            return 'Invalid integer';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+
+                        const SizedBox(height: 12),
 
                         // Material Selection Checkboxes/Chips
                         const Text('Associated Material IDs:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
@@ -312,12 +467,64 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
                 );
               }),
 
-              const SizedBox(height: 80), // Extra space to avoid overlap with FAB
+              const SizedBox(height: 80),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _GradingTaskFormState {
+  final int? lgId;
+  final TextEditingController taskNameCtrl;
+  final TextEditingController taskDescCtrl;
+  final TextEditingController gradeWeightCtrl;
+  final TextEditingController maxScoreCtrl;
+
+  _GradingTaskFormState({
+    this.lgId,
+    String? taskName,
+    String? taskDescription,
+    double? gradeWeight,
+    int? maxScore,
+  })  : taskNameCtrl = TextEditingController(text: taskName ?? ''),
+        taskDescCtrl = TextEditingController(text: taskDescription ?? ''),
+        gradeWeightCtrl = TextEditingController(text: gradeWeight?.toString() ?? '1.00'),
+        maxScoreCtrl = TextEditingController(text: maxScore?.toString() ?? '100');
+
+  factory _GradingTaskFormState.fromModel(LessonGradingModel model, {bool isCloning = false}) {
+    return _GradingTaskFormState(
+      lgId: isCloning ? null : model.lgId,
+      taskName: model.taskName,
+      taskDescription: model.taskDescription,
+      gradeWeight: model.gradeWeight,
+      maxScore: model.maxScore,
+    );
+  }
+
+  LessonGradingModel? toModel() {
+    final name = taskNameCtrl.text.trim();
+    if (name.isEmpty) return null;
+
+    final weight = double.tryParse(gradeWeightCtrl.text.trim()) ?? 1.0;
+    final maxScore = int.tryParse(maxScoreCtrl.text.trim()) ?? 100;
+
+    return LessonGradingModel(
+      lgId: lgId,
+      taskName: name,
+      taskDescription: taskDescCtrl.text.trim().isEmpty ? null : taskDescCtrl.text.trim(),
+      gradeWeight: weight,
+      maxScore: maxScore,
+    );
+  }
+
+  void dispose() {
+    taskNameCtrl.dispose();
+    taskDescCtrl.dispose();
+    gradeWeightCtrl.dispose();
+    maxScoreCtrl.dispose();
   }
 }
 
@@ -328,6 +535,8 @@ class _GradeLevelFormState {
   final TextEditingController objectivesCtrl;
   final TextEditingController remediationCtrl;
   final TextEditingController enrichmentCtrl;
+
+  final List<_GradingTaskFormState> gradingTasks;
   List<int> materialIds;
 
   _GradeLevelFormState({
@@ -337,15 +546,17 @@ class _GradeLevelFormState {
     String? objectives,
     String? remediation,
     String? enrichment,
+    List<_GradingTaskFormState>? gradingTasks,
     List<int>? materialIds,
   })  : contentStandardCtrl = TextEditingController(text: contentStandard ?? ''),
         performanceStandardCtrl = TextEditingController(text: performanceStandard ?? ''),
         objectivesCtrl = TextEditingController(text: objectives ?? ''),
         remediationCtrl = TextEditingController(text: remediation ?? ''),
         enrichmentCtrl = TextEditingController(text: enrichment ?? ''),
+        gradingTasks = gradingTasks ?? [_GradingTaskFormState()],
         materialIds = materialIds ?? [];
 
-  factory _GradeLevelFormState.fromModel(LessonGradeLevelModel model) {
+  factory _GradeLevelFormState.fromModel(LessonGradeLevelModel model, {bool isCloning = false}) {
     return _GradeLevelFormState(
       glId: model.glId,
       contentStandard: model.iContentStandard,
@@ -353,11 +564,19 @@ class _GradeLevelFormState {
       objectives: model.iObjectives,
       remediation: model.reRemediation,
       enrichment: model.reEnrichment,
+      gradingTasks: model.gradingTasks.isNotEmpty
+          ? model.gradingTasks.map((gt) => _GradingTaskFormState.fromModel(gt, isCloning: isCloning)).toList()
+          : [_GradingTaskFormState()],
       materialIds: List<int>.from(model.materialIds),
     );
   }
 
   LessonGradeLevelModel toModel() {
+    final compiledGradingTasks = gradingTasks
+        .map((gt) => gt.toModel())
+        .whereType<LessonGradingModel>()
+        .toList();
+
     return LessonGradeLevelModel(
       glId: glId,
       iContentStandard: contentStandardCtrl.text.trim().isEmpty ? null : contentStandardCtrl.text.trim(),
@@ -365,6 +584,7 @@ class _GradeLevelFormState {
       iObjectives: objectivesCtrl.text.trim().isEmpty ? null : objectivesCtrl.text.trim(),
       reRemediation: remediationCtrl.text.trim().isEmpty ? null : remediationCtrl.text.trim(),
       reEnrichment: enrichmentCtrl.text.trim().isEmpty ? null : enrichmentCtrl.text.trim(),
+      gradingTasks: compiledGradingTasks,
       materialIds: materialIds,
     );
   }
@@ -375,5 +595,8 @@ class _GradeLevelFormState {
     objectivesCtrl.dispose();
     remediationCtrl.dispose();
     enrichmentCtrl.dispose();
+    for (var task in gradingTasks) {
+      task.dispose();
+    }
   }
 }
