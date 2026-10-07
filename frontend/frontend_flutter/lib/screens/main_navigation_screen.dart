@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_providers.dart';
 import 'classroom_list_screen.dart';
 import 'lesson_plan_list_screen.dart';
-import 'student_list_screen.dart';
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
@@ -19,7 +18,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   final List<Widget> _screens = const [
     ClassroomListScreen(),
     LessonPlanListScreen(),
-    StudentListScreen(),
   ];
 
   Future<void> _handleLogout() async {
@@ -83,11 +81,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
             label: 'Lesson Plans',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Students',
           ),
         ],
       ),

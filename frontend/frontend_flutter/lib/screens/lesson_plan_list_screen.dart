@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/app_providers.dart';
+import 'lesson_plan_detail_screen.dart';
 
 class LessonPlanListScreen extends ConsumerWidget {
   const LessonPlanListScreen({super.key});
@@ -36,22 +38,34 @@ class LessonPlanListScreen extends ConsumerWidget {
                   itemCount: plans.length,
                   itemBuilder: (context, index) {
                     final plan = plans[index];
+                    final gradeLevelsText = plan.gradeLevels.isEmpty
+                        ? 'None specified'
+                        : plan.gradeLevels
+                            .map((gl) => gl.gradeLevelName ?? 'GL ${gl.glId}')
+                            .join(', ');
+
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: ExpansionTile(
-                        title: Text(plan.lpTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${plan.learningArea} • ${plan.primaryLanguage}'),
-                        children: [
-                          if (plan.notes != null)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              child: Text('Notes: ${plan.notes}'),
+                      child: ListTile(
+                        title: Text(
+                          plan.lpTitle,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          '${plan.learningArea} • ${plan.primaryLanguage}\nGrade levels: $gradeLevelsText',
+                        ),
+                        isThreeLine: true,
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LessonPlanDetailScreen(
+                                lessonPlan: plan,
+                              ),
                             ),
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text('Grade Levels Configured: ${plan.gradeLevels.length}'),
-                          ),
-                        ],
+                          );
+                        },
                       ),
                     );
                   },
