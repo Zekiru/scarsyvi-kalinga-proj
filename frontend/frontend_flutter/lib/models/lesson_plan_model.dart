@@ -25,6 +25,8 @@ class LessonPlanModel {
 
   /// Factory for parsing GET responses from LessonPlanDetailSerializer
   factory LessonPlanModel.fromJson(Map<String, dynamic> json) {
+    final rawGradeLevels = json['grade_levels_detail'] ?? json['grade_levels'];
+
     return LessonPlanModel(
       lpId: json['lp_id'] as int?,
       lpTitle: json['lp_title'] as String,
@@ -34,7 +36,7 @@ class LessonPlanModel {
       learningModelDescription: json['learning_model_description'] as String?,
       intentionsDescription: json['intentions_description'] as String?,
       notes: json['notes'] as String?,
-      gradeLevels: (json['grade_levels_detail'] as List<dynamic>?)
+      gradeLevels: (rawGradeLevels as List<dynamic>?)
               ?.map((item) => LessonGradeLevelModel.fromJson(item as Map<String, dynamic>))
               .toList() ??
           [],

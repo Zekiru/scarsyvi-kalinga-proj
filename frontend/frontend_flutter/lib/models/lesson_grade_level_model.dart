@@ -36,6 +36,16 @@ class LessonGradeLevelModel {
   });
 
   factory LessonGradeLevelModel.fromJson(Map<String, dynamic> json) {
+    final rawMaterialsDetail = (json['materials_detail'] as List<dynamic>?)
+            ?.map((item) => LessonGradeMaterialModel.fromJson(item as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    final extractedMaterialIds = (json['material_ids'] as List<dynamic>?)
+            ?.map((e) => e as int)
+            .toList() ??
+        rawMaterialsDetail.map((m) => m.material.materialId).toList();
+
     return LessonGradeLevelModel(
       glId: json['gl_id'] as int,
       gradeLevelName: json['grade_level_name'] as String?,
@@ -55,10 +65,8 @@ class LessonGradeLevelModel {
               ?.map((item) => LessonGradingModel.fromJson(item as Map<String, dynamic>))
               .toList() ??
           [],
-      materialsDetail: (json['materials_detail'] as List<dynamic>?)
-              ?.map((item) => LessonGradeMaterialModel.fromJson(item as Map<String, dynamic>))
-              .toList() ??
-          [],
+      materialsDetail: rawMaterialsDetail,
+      materialIds: extractedMaterialIds,
     );
   }
 

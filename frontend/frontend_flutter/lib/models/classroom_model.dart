@@ -12,7 +12,7 @@ class GradeLevelModel {
   factory GradeLevelModel.fromJson(Map<String, dynamic> json) {
     return GradeLevelModel(
       glId: json['gl_id'] as int,
-      gradeLevelName: json['grade_level_name'] as String,
+      gradeLevelName: json['grade_level_name'] as String? ?? 'Grade ${json['gl_id']}',
     );
   }
 
@@ -91,6 +91,22 @@ class ClassroomModel {
   }
 
   factory ClassroomModel.fromJson(Map<String, dynamic> json) {
+    final parsedGradeLevels = (json['grade_levels'] as List<dynamic>?)
+            ?.map((item) => GradeLevelModel.fromJson(item as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    final parsedGradeLevelIds = (json['grade_level_ids'] as List<dynamic>?)
+            ?.map((e) => e as int)
+            .toList() ??
+        parsedGradeLevels.map((gl) => gl.glId).toList();
+
+    final parsedLessonPlan = json['lesson_plan'] != null
+        ? LessonPlanSummaryModel.fromJson(json['lesson_plan'] as Map<String, dynamic>)
+        : null;
+
+    final parsedLessonPlanId = (json['lesson_plan_id'] as int?) ?? parsedLessonPlan?.lpId;
+
     return ClassroomModel(
       classroomId: json['classroom_id'] as int?,
       name: json['name'] as String,
@@ -103,13 +119,10 @@ class ClassroomModel {
               ?.map((item) => StudentModel.fromJson(item as Map<String, dynamic>))
               .toList() ??
           [],
-      gradeLevels: (json['grade_levels'] as List<dynamic>?)
-              ?.map((item) => GradeLevelModel.fromJson(item as Map<String, dynamic>))
-              .toList() ??
-          [],
-      lessonPlan: json['lesson_plan'] != null
-          ? LessonPlanSummaryModel.fromJson(json['lesson_plan'] as Map<String, dynamic>)
-          : null,
+      gradeLevels: parsedGradeLevels,
+      lessonPlan: parsedLessonPlan,
+      gradeLevelIds: parsedGradeLevelIds,
+      lessonPlanId: parsedLessonPlanId,
     );
   }
 

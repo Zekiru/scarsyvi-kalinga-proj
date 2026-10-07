@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/classroom_model.dart';
-import '../models/lesson_plan_model.dart';
 import '../providers/app_providers.dart';
 
 class ClassroomFormScreen extends ConsumerStatefulWidget {
@@ -118,6 +117,18 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
       appBar: AppBar(
         title: Text(isEditing ? 'Edit Classroom' : 'Create Classroom'),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: null, // Unique hero tag
+        onPressed: _isSubmitting ? null : _saveClassroom,
+        icon: _isSubmitting
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.save),
+        label: Text(isEditing ? 'Update Classroom' : 'Create Classroom'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -210,16 +221,7 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
                 value: _isActive,
                 onChanged: (val) => setState(() => _isActive = val),
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _saveClassroom,
-                  child: _isSubmitting
-                      ? const CircularProgressIndicator()
-                      : Text(isEditing ? 'Update Classroom' : 'Create Classroom'),
-                ),
-              ),
+              const SizedBox(height: 80), // Extra space to avoid overlap with FAB
             ],
           ),
         ),
