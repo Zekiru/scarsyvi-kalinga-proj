@@ -35,6 +35,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 ALLOWED_HOSTS = []
 
@@ -49,13 +50,18 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # Apps
+    # Third-party apps
+    'rest_framework',
+    'corsheaders',
+
+    # Local apps
     'apps.accounts',
     'apps.classrooms',
     'apps.curriculum',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # TOP
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -64,6 +70,16 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.TokenAuthentication', # or SimpleJWT
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
 
 ROOT_URLCONF = 'backend_django.urls'
 
