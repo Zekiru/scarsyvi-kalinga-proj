@@ -54,6 +54,7 @@ class LessonPlanListScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Curriculum & Lesson Plans')),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: null,
         onPressed: () {
           Navigator.push(
             context,
