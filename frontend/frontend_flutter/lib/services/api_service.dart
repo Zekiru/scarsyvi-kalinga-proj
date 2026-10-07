@@ -97,6 +97,27 @@ class ApiService {
     }
   }
 
+  Future<ClassroomModel> updateClassroom(ClassroomModel classroom) async {
+    if (classroom.classroomId == null) {
+      throw Exception('Cannot update a classroom without a classroomId');
+    }
+
+    final headers = await _getHeaders();
+    final response = await http.put(
+      Uri.parse('${configuredBaseUrl}/classrooms/${classroom.classroomId}/'),
+      headers: headers,
+      body: jsonEncode(classroom.toWriteJson()),
+    );
+
+    _checkResponse(response);
+
+    if (response.statusCode == 200) {
+      return ClassroomModel.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception('Failed to update classroom: ${response.statusCode}');
+    }
+  }
+
   // --- Lesson Plans ---
   Future<List<LessonPlanModel>> fetchLessonPlans({String? search, String? learningArea}) async {
     final headers = await _getHeaders();

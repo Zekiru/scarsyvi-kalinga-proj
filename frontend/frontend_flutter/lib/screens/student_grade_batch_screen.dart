@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:frontend_flutter/models/student_model.dart';
 import '../models/classroom_model.dart';
 import '../models/lesson_plan_model.dart';
 import '../models/lesson_grading_model.dart';
@@ -8,8 +9,11 @@ import '../providers/app_providers.dart';
 
 class StudentGradeBatchScreen extends ConsumerStatefulWidget {
   final ClassroomModel classroom;
+  final StudentModel? student;
 
-  const StudentGradeBatchScreen({super.key, required this.classroom});
+  const StudentGradeBatchScreen({
+    super.key, required this.classroom, this.student,
+    });
 
   @override
   ConsumerState<StudentGradeBatchScreen> createState() => _StudentGradeBatchScreenState();

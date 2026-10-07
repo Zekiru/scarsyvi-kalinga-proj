@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:frontend_flutter/models/student_model.dart';
 import '../models/classroom_model.dart';
 import '../models/attendance_model.dart';
 import '../providers/app_providers.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
   final ClassroomModel classroom;
+  final StudentModel? student;
 
-  const AttendanceScreen({super.key, required this.classroom});
+  const AttendanceScreen({
+    super.key, required this.classroom, this.student,
+  });
 
   @override
   ConsumerState<AttendanceScreen> createState() => _AttendanceScreenState();
