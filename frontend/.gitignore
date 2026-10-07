@@ -46,3 +46,32 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+
+# Flutter / Dart build outputs
+**/build/
+**/.dart_tool/
+**/.pub-cache/
+**/.pub/
+
+# Native platform build caches & dependencies
+**/android/.gradle/
+**/android/app/build/
+**/android/local.properties
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/windows/flutter/ephemeral/
+**/macOS/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# IDE and Editor files
+.idea/
+*.iml
+*.iws
+.vscode/
+*.swp
+
+# Environment configuration files
+.env
