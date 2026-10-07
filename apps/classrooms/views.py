@@ -1,19 +1,74 @@
+from django.db.models import Count, Q, FloatField, ExpressionWrapper, F, Sum, Prefetch
+from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.filters import OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import Classroom, AttendanceSession, StudentGrade
+from .models import Classroom, AttendanceSession, StudentGrade, Student
 from .serializers import (
     ClassroomSerializer,
     AttendanceSessionSerializer,
     StudentGradeBatchSerializer,
-    StudentGradeReadSerializer
+    StudentGradeReadSerializer,
+    StudentSerializer
 )
 
 
 class ClassroomViewSet(viewsets.ModelViewSet):
-    queryset = Classroom.objects.all()
     serializer_class = ClassroomSerializer
+
+    def get_queryset(self):
+        ordering = self.request.query_params.get('student_ordering', 'last_name')
+
+        # Build annotated Student QuerySet matching exact LessonGrading field names
+        students_qs = Student.objects.annotate(
+            # 1. Attendance Rate Calculation
+            total_sessions=Count('attendance_records__session', distinct=True),
+            present_sessions=Count(
+                'attendance_records',
+                filter=Q(attendance_records__status='PRESENT'),
+                distinct=True
+            )
+        ).annotate(
+            attendance_rate=Coalesce(
+                ExpressionWrapper(
+                    (F('present_sessions') * 100.0) / F('total_sessions'),
+                    output_field=FloatField()
+                ),
+                100.0  # Defaults to 100% attendance if no sessions logged yet
+            ),
+
+            # 2. Recorded Weighted Grades Calculation (score / max_score * grade_weight)
+            total_earned_points=Sum(
+                ExpressionWrapper(
+                    (F('grades__score') * 100.0 / F('grades__grading_task__max_score'))
+                    * F('grades__grading_task__grade_weight'),
+                    output_field=FloatField()
+                )
+            ),
+            total_recorded_weights=Sum(
+                ExpressionWrapper(
+                    F('grades__grading_task__grade_weight'),
+                    output_field=FloatField()
+                )
+            )
+        ).annotate(
+            # Grade Average: Earned Weighted Points / Recorded Task Weights
+            # Defaults to 100.0% if no grades have been logged yet
+            grade_avg=Coalesce(
+                ExpressionWrapper(
+                    F('total_earned_points') / F('total_recorded_weights'),
+                    output_field=FloatField()
+                ),
+                100.0
+            )
+        ).order_by(ordering)
+
+        return Classroom.objects.prefetch_related(
+            Prefetch('students', queryset=students_qs)
+        )
 
     @action(detail=True, methods=['get', 'post'], url_path='attendance')
     def attendance(self, request, pk=None):
@@ -41,7 +96,6 @@ class ClassroomViewSet(viewsets.ModelViewSet):
         classroom = self.get_object()
 
         if request.method == 'GET':
-            # Retrieve grades for all students enrolled in this classroom
             grades = StudentGrade.objects.filter(student__classroom=classroom)
             serializer = StudentGradeReadSerializer(grades, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -55,3 +109,57 @@ class ClassroomViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_201_CREATED
                 )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StudentViewSet(viewsets.ModelViewSet):
+    """
+    Standalone ViewSet for flat querying/filtering of students across classrooms.
+    """
+    serializer_class = StudentSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['classroom', 'gender']
+    ordering_fields = ['last_name', 'first_name', 'attendance_rate', 'grade_avg']
+    ordering = ['last_name']
+
+    def get_queryset(self):
+        queryset = Student.objects.all()
+
+        queryset = queryset.annotate(
+            total_sessions=Count('attendance_records__session', distinct=True),
+            present_sessions=Count(
+                'attendance_records',
+                filter=Q(attendance_records__status='PRESENT'),
+                distinct=True
+            )
+        ).annotate(
+            attendance_rate=Coalesce(
+                ExpressionWrapper(
+                    (F('present_sessions') * 100.0) / F('total_sessions'),
+                    output_field=FloatField()
+                ),
+                100.0
+            ),
+            total_earned_points=Sum(
+                ExpressionWrapper(
+                    (F('grades__score') * 100.0 / F('grades__grading_task__max_score'))
+                    * F('grades__grading_task__grade_weight'),
+                    output_field=FloatField()
+                )
+            ),
+            total_recorded_weights=Sum(
+                ExpressionWrapper(
+                    F('grades__grading_task__grade_weight'),
+                    output_field=FloatField()
+                )
+            )
+        ).annotate(
+            grade_avg=Coalesce(
+                ExpressionWrapper(
+                    F('total_earned_points') / F('total_recorded_weights'),
+                    output_field=FloatField()
+                ),
+                100.0
+            )
+        )
+
+        return queryset
