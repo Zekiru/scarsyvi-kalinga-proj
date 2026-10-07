@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
-from apps.curriculum.models import GradeLevel, LessonPlan
-from .models import Classroom, Student
+from apps.curriculum.models import GradeLevel, LessonPlan, LessonGrading
+from .models import Classroom, Student, AttendanceSession, StudentAttendance, StudentGrade
 
 
 class GradeLevelSerializer(serializers.ModelSerializer):
@@ -109,3 +109,98 @@ class ClassroomSerializer(serializers.ModelSerializer):
                 grade_level_id=gl_id,
                 **student_item
             )
+
+
+# =====================================================================
+# Attendance and Grading Serializers
+# =====================================================================
+
+class StudentAttendanceSerializer(serializers.ModelSerializer):
+    """Serializer for individual student attendance entries."""
+    student_id = serializers.IntegerField(source='student.student_id')
+
+    class Meta:
+        model = StudentAttendance
+        fields = ['student_id', 'status', 'notes']
+
+
+class AttendanceSessionSerializer(serializers.ModelSerializer):
+    """Batch serializer for daily classroom attendance logging (supports updates)."""
+    records = StudentAttendanceSerializer(many=True)
+
+    class Meta:
+        model = AttendanceSession
+        fields = ['id', 'date', 'remarks', 'records']
+
+    @transaction.atomic
+    def create(self, validated_data):
+        records_data = validated_data.pop('records', [])
+        classroom = self.context.get('classroom')
+        session_date = validated_data.get('date')
+
+        # Upsert the AttendanceSession for this classroom and date
+        session, _ = AttendanceSession.objects.update_or_create(
+            classroom=classroom,
+            date=session_date,
+            defaults={
+                'remarks': validated_data.get('remarks', '')
+            }
+        )
+
+        # Upsert individual student attendance records for this session
+        for record_data in records_data:
+            student_dict = record_data.pop('student')
+            student_id = student_dict['student_id']
+
+            StudentAttendance.objects.update_or_create(
+                session=session,
+                student_id=student_id,
+                defaults={
+                    'status': record_data.get('status', 'PRESENT'),
+                    'notes': record_data.get('notes', '')
+                }
+            )
+
+        return session
+
+
+class SingleGradeItemSerializer(serializers.Serializer):
+    """Write schema for scoring an individual student against a LessonGrading task."""
+    student_id = serializers.IntegerField()
+    grading_task_id = serializers.IntegerField()
+    score = serializers.DecimalField(max_digits=5, decimal_places=2)
+    feedback = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class StudentGradeBatchSerializer(serializers.Serializer):
+    """Batch serializer for submitting multiple student grades at once."""
+    grades = SingleGradeItemSerializer(many=True)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        grades_data = validated_data.get('grades', [])
+        created_grades = []
+
+        for item in grades_data:
+            grade_obj, _ = StudentGrade.objects.update_or_create(
+                student_id=item['student_id'],
+                grading_task_id=item['grading_task_id'],
+                defaults={
+                    'score': item['score'],
+                    'feedback': item.get('feedback', '')
+                }
+            )
+            created_grades.append(grade_obj)
+
+        return created_grades
+
+
+class StudentGradeReadSerializer(serializers.ModelSerializer):
+    """Read serializer for returning student grades."""
+    student_id = serializers.IntegerField(source='student.student_id')
+    student_name = serializers.CharField(source='student.first_name', read_only=True)
+    grading_task_title = serializers.CharField(source='grading_task.task_name', read_only=True)
+
+    class Meta:
+        model = StudentGrade
+        fields = ['id', 'student_id', 'student_name', 'grading_task_id', 'grading_task_title', 'score', 'feedback', 'submitted_at']
