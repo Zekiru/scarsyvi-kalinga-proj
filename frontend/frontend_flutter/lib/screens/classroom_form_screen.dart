@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/classroom_model.dart';
+import '../models/lesson_plan_model.dart';
 import '../providers/app_providers.dart';
 
 class ClassroomFormScreen extends ConsumerStatefulWidget {
@@ -51,6 +52,13 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
   Future<void> _saveClassroom() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_selectedGradeLevelIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one grade level.')),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     final payload = ClassroomModel(
@@ -71,17 +79,29 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
       if (widget.classroom?.classroomId == null) {
         await api.createClassroom(payload);
       } else {
-        // Implement api.updateClassroom(payload) as needed
+        await api.updateClassroom(payload);
       }
 
       if (mounted) {
         ref.read(classroomsProvider.notifier).refresh();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.classroom == null
+                  ? 'Classroom created successfully!'
+                  : 'Classroom updated successfully!',
+            ),
+          ),
+        );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save classroom: $e')),
+          SnackBar(
+            content: Text('Failed to save classroom: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -92,6 +112,7 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.classroom != null;
+    final lessonPlansAsync = ref.watch(lessonPlansProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -125,6 +146,63 @@ class _ClassroomFormScreenState extends ConsumerState<ClassroomFormScreen> {
                 controller: _schoolYearController,
                 decoration: const InputDecoration(labelText: 'School Year', border: OutlineInputBorder()),
                 validator: (val) => val == null || val.trim().isEmpty ? 'Please enter school year' : null,
+              ),
+              const SizedBox(height: 16),
+
+              // --- Lesson Plan Dropdown Selection ---
+              lessonPlansAsync.when(
+                data: (plans) {
+                  return DropdownButtonFormField<int?>(
+                    value: _selectedLessonPlanId,
+                    decoration: const InputDecoration(
+                      labelText: 'Linked Lesson Plan (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('None'),
+                      ),
+                      ...plans.map((plan) {
+                        return DropdownMenuItem<int?>(
+                          value: plan.lpId,
+                          child: Text(plan.lpTitle, overflow: TextOverflow.ellipsis),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) => setState(() => _selectedLessonPlanId = val),
+                  );
+                },
+                loading: () => const LinearProgressIndicator(),
+                error: (err, _) => Text('Error loading lesson plans: $err'),
+              ),
+              const SizedBox(height: 16),
+
+              // --- Grade Levels Selection ---
+              const Text(
+                'Assigned Grade Levels',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: List.generate(6, (index) {
+                  final glId = index + 1;
+                  final isSelected = _selectedGradeLevelIds.contains(glId);
+                  return FilterChip(
+                    label: Text('Grade $glId'),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedGradeLevelIds.add(glId);
+                        } else {
+                          _selectedGradeLevelIds.remove(glId);
+                        }
+                      });
+                    },
+                  );
+                }),
               ),
               const SizedBox(height: 16),
               SwitchListTile(

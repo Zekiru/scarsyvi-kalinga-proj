@@ -5,6 +5,7 @@ import '../models/lesson_grade_level_model.dart';
 import '../models/lesson_flow_model.dart';
 import '../models/lesson_grading_model.dart';
 import '../models/lesson_grade_material_model.dart';
+import 'lesson_plan_form_screen.dart';
 
 class LessonPlanDetailScreen extends StatelessWidget {
   final LessonPlanModel lessonPlan;
@@ -17,6 +18,20 @@ class LessonPlanDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(lessonPlan.lpTitle),
         elevation: 1,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            tooltip: 'Edit Lesson Plan',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LessonPlanFormScreen(lessonPlan: lessonPlan),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -162,12 +177,12 @@ class _GradeLevelDetailCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: ExpansionTile(
         initiallyExpanded: true,
-        leading: CircleAvatar(
+        leading: const CircleAvatar(
           backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
           child: Text(
             'GL',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
         ),
         title: Text(

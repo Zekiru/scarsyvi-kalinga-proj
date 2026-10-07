@@ -109,6 +109,20 @@ class ApiService {
     }
   }
 
+  Future<void> deleteClassroom(int id) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('${configuredBaseUrl}/classrooms/$id/'),
+      headers: headers,
+    );
+
+    _checkResponse(response);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete classroom (${response.statusCode}): ${response.body}');
+    }
+  }
+
   // --- Lesson Plans ---
   Future<List<LessonPlanModel>> fetchLessonPlans({String? search, String? learningArea}) async {
     final headers = await _getHeaders();
@@ -126,6 +140,54 @@ class ApiService {
       return data.map((json) => LessonPlanModel.fromJson(json)).toList();
     } else {
       throw Exception('Failed to load lesson plans');
+    }
+  }
+
+  Future<LessonPlanModel> createLessonPlan(LessonPlanModel lessonPlan) async {
+    final headers = await _getHeaders();
+    final response = await http.post(
+      Uri.parse('${configuredBaseUrl}/lesson-plans/'),
+      headers: headers,
+      body: jsonEncode(lessonPlan.toWriteJson()),
+    );
+
+    _checkResponse(response);
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return LessonPlanModel.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception('Failed to create lesson plan: ${response.body}');
+    }
+  }
+
+  Future<LessonPlanModel> updateLessonPlan(LessonPlanModel lessonPlan) async {
+    final headers = await _getHeaders();
+    final response = await http.put(
+      Uri.parse('${configuredBaseUrl}/lesson-plans/${lessonPlan.lpId}/'),
+      headers: headers,
+      body: jsonEncode(lessonPlan.toWriteJson()),
+    );
+
+    _checkResponse(response);
+
+    if (response.statusCode == 200) {
+      return LessonPlanModel.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception('Failed to update lesson plan (${response.statusCode}): ${response.body}');
+    }
+  }
+
+  Future<void> deleteLessonPlan(int id) async {
+    final headers = await _getHeaders();
+    final response = await http.delete(
+      Uri.parse('${configuredBaseUrl}/lesson-plans/$id/'),
+      headers: headers,
+    );
+
+    _checkResponse(response);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete lesson plan (${response.statusCode}): ${response.body}');
     }
   }
 

@@ -180,8 +180,8 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
     });
   }
 
-  void _navigateToAttendance() {
-    Navigator.push(
+  Future<void> _navigateToAttendance() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => AttendanceScreen(
@@ -189,10 +189,12 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
         ),
       ),
     );
+    // Refresh backend data when returning from attendance tracking
+    ref.read(classroomsProvider.notifier).refresh();
   }
 
-  void _navigateToGrading() {
-    Navigator.push(
+  Future<void> _navigateToGrading() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => StudentGradeBatchScreen(
@@ -200,6 +202,8 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
         ),
       ),
     );
+    // Refresh backend data when returning from batch grading
+    ref.read(classroomsProvider.notifier).refresh();
   }
 
   Future<void> _saveClassroomChanges() async {
@@ -245,6 +249,21 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Dynamically watch provider updates from backend re-fetches
+    final classroomsAsync = ref.watch(classroomsProvider);
+
+    classroomsAsync.whenData((classrooms) {
+      final updatedClassroom = classrooms.firstWhere(
+        (c) => c.classroomId == widget.classroom.classroomId,
+        orElse: () => widget.classroom,
+      );
+
+      // Re-sync local state automatically when provider updates and no pending local edits exist
+      if (!_hasUnsavedChanges) {
+        _localStudents = List<StudentModel>.from(updatedClassroom.students);
+      }
+    });
+
     final displayedStudents = _sortedStudents;
 
     return Scaffold(

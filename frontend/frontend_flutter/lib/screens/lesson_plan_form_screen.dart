@@ -71,14 +71,33 @@ class _LessonPlanFormScreenState extends ConsumerState<LessonPlanFormScreen> {
     );
 
     try {
-      // Implement API endpoint call (create or update lesson plan)
+      final api = ref.read(apiServiceProvider);
+      if (widget.lessonPlan?.lpId == null) {
+        await api.createLessonPlan(payload);
+      } else {
+        await api.updateLessonPlan(payload);
+      }
+
       if (mounted) {
+        ref.invalidate(lessonPlansProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.lessonPlan == null
+                  ? 'Lesson plan created successfully!'
+                  : 'Lesson plan updated successfully!',
+            ),
+          ),
+        );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save lesson plan: $e')),
+          SnackBar(
+            content: Text('Failed to save lesson plan: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
