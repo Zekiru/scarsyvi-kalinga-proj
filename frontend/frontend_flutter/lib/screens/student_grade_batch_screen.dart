@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/classroom_model.dart';
+import '../models/lesson_plan_model.dart';
+import '../models/lesson_grading_model.dart';
 import '../models/student_grade_model.dart';
 import '../providers/app_providers.dart';
 
@@ -14,7 +16,9 @@ class StudentGradeBatchScreen extends ConsumerStatefulWidget {
 }
 
 class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScreen> {
-  final TextEditingController _taskIdController = TextEditingController();
+  int? _selectedTaskId;
+  int? _selectedTaskGradeLevelId;
+  Future<LessonPlanModel?>? _lessonPlanFuture;
   final Map<int, TextEditingController> _scoreControllers = {};
   bool _isSubmitting = false;
 
@@ -26,11 +30,24 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
         _scoreControllers[student.studentId!] = TextEditingController(text: '0.00');
       }
     }
+
+    final lpId = widget.classroom.lessonPlan?.lpId;
+    if (lpId != null) {
+      _lessonPlanFuture = _loadLinkedLessonPlan(lpId);
+    }
+  }
+
+  Future<LessonPlanModel?> _loadLinkedLessonPlan(int lpId) async {
+    final plans = await ref.read(apiServiceProvider).fetchLessonPlans();
+    try {
+      return plans.firstWhere((plan) => plan.lpId == lpId);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
   void dispose() {
-    _taskIdController.dispose();
     for (var controller in _scoreControllers.values) {
       controller.dispose();
     }
@@ -38,21 +55,34 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
   }
 
   Future<void> _submitGrades() async {
-    final taskId = int.tryParse(_taskIdController.text);
-    if (taskId == null) {
+    if (_selectedTaskId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid Grading Task ID')),
+        const SnackBar(content: Text('Please select a grading task from the dropdown')),
+      );
+      return;
+    }
+
+    final eligibleStudents = widget.classroom.students.where((student) {
+      return _selectedTaskGradeLevelId == null || student.glId == _selectedTaskGradeLevelId;
+    }).toList();
+
+    if (eligibleStudents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No eligible students found for this grade level task.')),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    final gradeItems = _scoreControllers.entries.map((e) {
+    final gradeItems = eligibleStudents
+        .where((s) => s.studentId != null)
+        .map((student) {
+      final controller = _scoreControllers[student.studentId!];
       return StudentGradeItem(
-        studentId: e.key,
-        gradingTaskId: taskId,
-        score: double.tryParse(e.value.text) ?? 0.0,
+        studentId: student.studentId!,
+        gradingTaskId: _selectedTaskId!,
+        score: double.tryParse(controller?.text ?? '0.00') ?? 0.0,
       );
     }).toList();
 
@@ -80,43 +110,133 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
 
   @override
   Widget build(BuildContext context) {
+    final filteredStudents = widget.classroom.students.where((student) {
+      if (_selectedTaskGradeLevelId == null) return true;
+      return student.glId == _selectedTaskGradeLevelId;
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Batch Grade Entry')),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(12.0),
-            child: TextField(
-              controller: _taskIdController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Lesson Grading Task ID',
-                border: OutlineInputBorder(),
+            child: _lessonPlanFuture == null
+                ? const Card(
+                    color: Colors.amber,
+                    child: Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: Text('No lesson plan linked to this classroom.'),
+                    ),
+                  )
+                : FutureBuilder<LessonPlanModel?>(
+                    future: _lessonPlanFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const LinearProgressIndicator();
+                      }
+                      if (snapshot.hasError) {
+                        return Text('Failed to load tasks: ${snapshot.error}');
+                      }
+
+                      final plan = snapshot.data;
+                      final taskItems = <Map<String, dynamic>>[];
+                      if (plan != null) {
+                        for (var gl in plan.gradeLevels) {
+                          for (var task in gl.gradingTasks) {
+                            taskItems.add({
+                              'glId': gl.glId,
+                              'glName': gl.gradeLevelName,
+                              'task': task,
+                            });
+                          }
+                        }
+                      }
+
+                      if (taskItems.isEmpty) {
+                        return const Text('No grading tasks found in linked lesson plan.');
+                      }
+
+                      return DropdownButtonFormField<int>(
+                        value: _selectedTaskId,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Grading Task',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: taskItems.map((item) {
+                          final task = item['task'] as LessonGradingModel;
+                          final glName = item['glName'] as String?;
+                          return DropdownMenuItem<int>(
+                            value: task.lgId,
+                            child: Text(
+                              '[${glName ?? "GL ${item['glId']}"}] ${task.taskName} (Max: ${task.maxScore})',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          final selectedItem = taskItems.firstWhere(
+                            (item) => (item['task'] as LessonGradingModel).lgId == val,
+                          );
+                          setState(() {
+                            _selectedTaskId = val;
+                            _selectedTaskGradeLevelId = selectedItem['glId'] as int;
+                          });
+                        },
+                      );
+                    },
+                  ),
+          ),
+          if (_selectedTaskGradeLevelId != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Showing ${filteredStudents.length} student(s) matching selected task grade level.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
               ),
             ),
-          ),
           Expanded(
-            child: ListView.builder(
-              itemCount: widget.classroom.students.length,
-              itemBuilder: (context, index) {
-                final student = widget.classroom.students[index];
-                final id = student.studentId!;
-                return ListTile(
-                  title: Text('${student.firstName} ${student.lastName}'),
-                  trailing: SizedBox(
-                    width: 100,
-                    child: TextField(
-                      controller: _scoreControllers[id],
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Score',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
+            child: filteredStudents.isEmpty
+                ? const Center(
+                    child: Text('No students match the selected task grade level.'),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                    itemCount: filteredStudents.length,
+                    itemBuilder: (context, index) {
+                      final student = filteredStudents[index];
+                      final id = student.studentId!;
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 6.0), // Increased row spacing
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${student.firstName} ${student.lastName}',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: Text('Grade Level ID: ${student.glId}'),
+                            trailing: SizedBox(
+                              width: 110,
+                              child: TextField(
+                                controller: _scoreControllers[id],
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                  labelText: 'Score',
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
           Padding(
             padding: const EdgeInsets.all(16.0),

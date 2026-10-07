@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
 import '../models/classroom_model.dart';
+import '../models/student_model.dart';
 import 'attendance_screen.dart';
 import 'student_grade_batch_screen.dart';
 
-class ClassroomDetailScreen extends StatelessWidget {
+class ClassroomDetailScreen extends StatefulWidget {
   final ClassroomModel classroom;
 
   const ClassroomDetailScreen({super.key, required this.classroom});
 
   @override
+  State<ClassroomDetailScreen> createState() => _ClassroomDetailScreenState();
+}
+
+class _ClassroomDetailScreenState extends State<ClassroomDetailScreen> {
+  StudentSortBy _selectedSort = StudentSortBy.nameAsc;
+
+  @override
   Widget build(BuildContext context) {
+    final sortedStudents = widget.classroom.getSortedStudents(_selectedSort);
+
     return Scaffold(
-      appBar: AppBar(title: Text(classroom.name)),
+      appBar: AppBar(title: Text(widget.classroom.name)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -24,14 +34,14 @@ class ClassroomDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('School: ${classroom.schoolName}', style: const TextStyle(fontSize: 16)),
-                    if (classroom.section != null) Text('Section: ${classroom.section}'),
-                    Text('School Year: ${classroom.schoolYear}'),
-                    if (classroom.lessonPlan != null) ...[
+                    Text('School: ${widget.classroom.schoolName}', style: const TextStyle(fontSize: 16)),
+                    if (widget.classroom.section != null) Text('Section: ${widget.classroom.section}'),
+                    Text('School Year: ${widget.classroom.schoolYear}'),
+                    if (widget.classroom.lessonPlan != null) ...[
                       const Divider(),
-                      Text('Linked Lesson Plan: ${classroom.lessonPlan!.lpTitle}',
+                      Text('Linked Lesson Plan: ${widget.classroom.lessonPlan!.lpTitle}',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text('Area: ${classroom.lessonPlan!.learningArea}'),
+                      Text('Area: ${widget.classroom.lessonPlan!.learningArea}'),
                     ],
                   ],
                 ),
@@ -50,7 +60,7 @@ class ClassroomDetailScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => AttendanceScreen(classroom: classroom),
+                          builder: (_) => AttendanceScreen(classroom: widget.classroom),
                         ),
                       );
                     },
@@ -65,7 +75,7 @@ class ClassroomDetailScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => StudentGradeBatchScreen(classroom: classroom),
+                          builder: (_) => StudentGradeBatchScreen(classroom: widget.classroom),
                         ),
                       );
                     },
@@ -75,25 +85,62 @@ class ClassroomDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Roster List
-            Text(
-              'Enrolled Students (${classroom.students.length})',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            // Roster Header with Sorting Dropdown
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Enrolled Students (${sortedStudents.length})',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                DropdownButton<StudentSortBy>(
+                  value: _selectedSort,
+                  underline: const SizedBox(),
+                  icon: const Icon(Icons.sort),
+                  onChanged: (StudentSortBy? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedSort = newValue;
+                      });
+                    }
+                  },
+                  items: const [
+                    DropdownMenuItem(
+                      value: StudentSortBy.nameAsc,
+                      child: Text('Name (A–Z)'),
+                    ),
+                    DropdownMenuItem(
+                      value: StudentSortBy.nameDesc,
+                      child: Text('Name (Z–A)'),
+                    ),
+                    DropdownMenuItem(
+                      value: StudentSortBy.gradeAvgDesc,
+                      child: Text('Highest Grade'),
+                    ),
+                    DropdownMenuItem(
+                      value: StudentSortBy.attendanceRateDesc,
+                      child: Text('Highest Attendance'),
+                    ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 8),
+
+            // Roster List
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: classroom.students.length,
+              itemCount: sortedStudents.length,
               itemBuilder: (context, index) {
-                final student = classroom.students[index];
+                final student = sortedStudents[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   child: ListTile(
                     leading: CircleAvatar(
                       child: Text(student.gender),
                     ),
-                    title: Text('${student.firstName} ${student.lastName}'),
+                    title: Text(student.fullName),
                     subtitle: Text('LRN: ${student.lrn ?? "N/A"}'),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,

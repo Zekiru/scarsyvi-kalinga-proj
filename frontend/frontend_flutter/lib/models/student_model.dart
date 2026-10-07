@@ -1,3 +1,5 @@
+enum StudentSortBy { nameAsc, nameDesc, gradeAvgDesc, attendanceRateDesc }
+
 class StudentModel {
   final int? studentId;
   final int glId;
@@ -18,6 +20,9 @@ class StudentModel {
     this.attendanceRate = 0.0,
     this.gradeAvg = 0.0,
   });
+
+  String get fullName => '$firstName $lastName';
+  String get sortableName => '$lastName, $firstName';
 
   factory StudentModel.fromJson(Map<String, dynamic> json) {
     return StudentModel(
@@ -43,5 +48,19 @@ class StudentModel {
       'attendance_rate': attendanceRate,
       'grade_avg': gradeAvg,
     };
+  }
+
+  /// Comparison helper for sorting student lists
+  int compareTo(StudentModel other, StudentSortBy sortBy) {
+    switch (sortBy) {
+      case StudentSortBy.nameAsc:
+        return sortableName.toLowerCase().compareTo(other.sortableName.toLowerCase());
+      case StudentSortBy.nameDesc:
+        return other.sortableName.toLowerCase().compareTo(sortableName.toLowerCase());
+      case StudentSortBy.gradeAvgDesc:
+        return other.gradeAvg.compareTo(gradeAvg);
+      case StudentSortBy.attendanceRateDesc:
+        return other.attendanceRate.compareTo(attendanceRate);
+    }
   }
 }

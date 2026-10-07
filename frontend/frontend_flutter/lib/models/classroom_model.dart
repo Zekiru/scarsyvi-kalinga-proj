@@ -83,6 +83,13 @@ class ClassroomModel {
     this.lessonPlanId,
   });
 
+  /// Non-destructive helper to return sorted students
+  List<StudentModel> getSortedStudents([StudentSortBy sortBy = StudentSortBy.nameAsc]) {
+    final sortedList = List<StudentModel>.from(students);
+    sortedList.sort((a, b) => a.compareTo(b, sortBy));
+    return sortedList;
+  }
+
   factory ClassroomModel.fromJson(Map<String, dynamic> json) {
     return ClassroomModel(
       classroomId: json['classroom_id'] as int?,
