@@ -1,144 +1,77 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../models/classroom_model.dart';
+import '../models/lesson_plan_model.dart';
+import '../models/attendance_model.dart';
+import '../models/student_grade_model.dart';
+
+
 class ApiService {
-  // Use http://10.0.2.2:8000/api/v1 for Android Emulator
-  // Use http://127.0.0.1:8000/api/v1 for Web / Desktop / iOS Simulator
-  static const String baseUrl = 'http://127.0.0.1:8000/api/v1';
+  static const String baseUrl = 'http://10.0.2.2:8000/api/v1'; // Adjust base URL for your setup
 
-  // Standard JSON Headers
-  static const Map<String, String> _headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+  // --- Lesson Plans ---
+  Future<List<LessonPlanModel>> fetchLessonPlans({String? search, String? learningArea}) async {
+    final queryParams = <String, String>{};
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    if (learningArea != null && learningArea.isNotEmpty) queryParams['learning_area'] = learningArea;
 
-  // ---------------------------------------------------------------------------
-  // CLASSROOMS
-  // ---------------------------------------------------------------------------
+    final uri = Uri.parse('$baseUrl/lesson-plans/').replace(queryParameters: queryParams);
+    final response = await http.get(uri);
 
-  /// GET /api/v1/classrooms/
-  /// Fetches list of all classrooms with enrolled students and assigned lesson plans.
-  Future<List<dynamic>> getClassrooms() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/classrooms/'),
-      headers: _headers,
-    );
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to load classrooms: ${response.statusCode}');
-    }
-  }
-
-  /// GET /api/v1/classrooms/{id}/
-  /// Fetches single classroom detail.
-  Future<Map<String, dynamic>> getClassroomDetail(int classroomId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/classrooms/$classroomId/'),
-      headers: _headers,
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to load classroom detail');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // ATTENDANCE
-  // ---------------------------------------------------------------------------
-
-  /// GET /api/v1/classrooms/{id}/attendance/
-  /// Fetches historical attendance sessions for a classroom.
-  Future<List<dynamic>> getAttendance(int classroomId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/classrooms/$classroomId/attendance/'),
-      headers: _headers,
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to fetch attendance logs');
-    }
-  }
-
-  /// POST /api/v1/classrooms/{id}/attendance/
-  /// Logs or updates batch student attendance (Idempotent upsert).
-  Future<bool> submitAttendance(int classroomId, Map<String, dynamic> payload) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/classrooms/$classroomId/attendance/'),
-      headers: _headers,
-      body: jsonEncode(payload),
-    );
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      return true;
-    } else {
-      throw Exception('Failed to submit attendance: ${response.body}');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // GRADES
-  // ---------------------------------------------------------------------------
-
-  /// GET /api/v1/classrooms/{id}/grades/
-  /// Fetches recorded student grades for a classroom.
-  Future<List<dynamic>> getGrades(int classroomId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/classrooms/$classroomId/grades/'),
-      headers: _headers,
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to fetch grades');
-    }
-  }
-
-  /// POST /api/v1/classrooms/{id}/grades/
-  /// Batch creates or updates student scores for assigned lesson grading tasks.
-  Future<bool> submitGrades(int classroomId, Map<String, dynamic> payload) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/classrooms/$classroomId/grades/'),
-      headers: _headers,
-      body: jsonEncode(payload),
-    );
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      return true;
-    } else {
-      throw Exception('Failed to submit grades: ${response.body}');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // CURRICULUM & LESSON PLANS
-  // ---------------------------------------------------------------------------
-
-  /// GET /api/v1/lesson-plans/
-  /// Fetches all multigrade lesson plans, including associated materials and task weights.
-  Future<List<dynamic>> getLessonPlans() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/lesson-plans/'),
-      headers: _headers,
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => LessonPlanModel.fromJson(json)).toList();
     } else {
       throw Exception('Failed to load lesson plans');
     }
   }
 
-  /// GET /api/v1/materials/
-  /// Fetches learning materials and resources.
-  Future<List<dynamic>> getMaterials() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/materials/'),
-      headers: _headers,
-    );
+  // --- Classrooms ---
+  Future<List<ClassroomModel>> fetchClassrooms() async {
+    final response = await http.get(Uri.parse('$baseUrl/classrooms/'));
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => ClassroomModel.fromJson(json)).toList();
     } else {
-      throw Exception('Failed to load materials');
+      throw Exception('Failed to load classrooms');
+    }
+  }
+
+  Future<ClassroomModel> createClassroom(ClassroomModel classroom) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/classrooms/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(classroom.toWriteJson()),
+    );
+    if (response.statusCode == 201) {
+      return ClassroomModel.fromJson(jsonDecode(response.body));
+    } else {
+      throw Exception('Failed to create classroom');
+    }
+  }
+
+  // --- Attendance ---
+  Future<void> submitAttendance(int classroomId, AttendanceSessionModel session) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/classrooms/$classroomId/attendance/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(session.toJson()),
+    );
+    if (response.statusCode != 201) {
+      throw Exception('Failed to submit attendance');
+    }
+  }
+
+  // --- Student Grades ---
+  Future<void> submitGrades(int classroomId, StudentGradeBatchPayload batchPayload) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/classrooms/$classroomId/grades/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(batchPayload.toJson()),
+    );
+    if (response.statusCode != 201) {
+      throw Exception('Failed to submit student grades');
     }
   }
 }
