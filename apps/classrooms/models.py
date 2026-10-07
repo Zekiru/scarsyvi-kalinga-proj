@@ -1,75 +1,50 @@
 from django.db import models
-from django.conf import settings
-from apps.curriculum.models import LessonPlan, GradeLevel, LessonGrading
+from django.contrib.auth import get_user_model
+from apps.curriculum.models import GradeLevel, LessonPlan
+
+User = get_user_model()
+
+
+class Classroom(models.Model):
+    classroom_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=255, help_text="e.g., Grade 1 & 2 Multigrade Class")
+    school_name = models.CharField(max_length=255)
+    section = models.CharField(max_length=100, blank=True, null=True)
+    school_year = models.CharField(max_length=20, help_text="e.g., 2026-2027")
+    is_active = models.BooleanField(default=True)
+    
+    # Relationships
+    adviser = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classrooms")
+    grade_levels = models.ManyToManyField(GradeLevel, related_name="classrooms")
+    lesson_plan = models.ForeignKey(
+        LessonPlan, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="classrooms"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.school_year})"
 
 
 class Student(models.Model):
-    """Student master profiles."""
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+    ]
+
     student_id = models.AutoField(primary_key=True)
-    student_fname = models.CharField(max_length=100)
-    student_lname = models.CharField(max_length=100)
-    student_mi = models.CharField(max_length=5, blank=True, null=True)
-    gl = models.ForeignKey(GradeLevel, on_delete=models.PROTECT, related_name='students')
-
-    class Meta:
-        db_table = 'student'
-
-    def __str__(self):
-        return f"{self.student_lname}, {self.student_fname} ({self.gl.grade_level_name})"
-
-
-class Class(models.Model):
-    """Active multi-grade classroom session taught by a teacher."""
-    class_id = models.AutoField(primary_key=True)
-    lp = models.ForeignKey(LessonPlan, on_delete=models.SET_NULL, null=True, related_name='classes')
-    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='taught_classes')
-    class_name = models.CharField(max_length=255)
-    school_location = models.CharField(max_length=255)
-    term = models.CharField(max_length=50)
-    start_date = models.DateField()
-    end_date = models.DateField()
-    session_time = models.CharField(max_length=100)
-
-    students = models.ManyToManyField(
-        Student,
-        through='StudentClass',
-        related_name='enrolled_classes'
-    )
-
-    class Meta:
-        db_table = 'class'
-        verbose_name_plural = 'Classes'
+    classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name="students")
+    grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name="students")
+    
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
+    lrn = models.CharField(max_length=12, blank=True, null=True, help_text="Learner Reference Number")
 
     def __str__(self):
-        return f"{self.class_name} - {self.school_location}"
-
-
-class StudentClass(models.Model):
-    """Junction table for Student Enrollment & Attendance records."""
-    student_class_id = models.AutoField(primary_key=True)
-    clazz = models.ForeignKey(Class, on_delete=models.CASCADE)
-    student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    days_absent = models.IntegerField(default=0)
-    notes = models.TextField(blank=True, null=True)
-
-    class Meta:
-        db_table = 'student_class'
-        unique_together = (('clazz', 'student'),)
-
-    def __str__(self):
-        return f"{self.student} in {self.clazz.class_name}"
-
-
-class StudentGrading(models.Model):
-    """Assessment grades linked directly to student classroom enrollment."""
-    sg_id = models.AutoField(primary_key=True)
-    lg = models.ForeignKey(LessonGrading, on_delete=models.CASCADE, related_name='student_scores')
-    student_class = models.ForeignKey(StudentClass, on_delete=models.CASCADE, related_name='grades')
-    total_score = models.DecimalField(max_digits=5, decimal_places=2)
-
-    class Meta:
-        db_table = 'student_grading'
-        unique_together = (('lg', 'student_class'),)
-
-    def __str__(self):
-        return f"Score: {self.total_score} - {self.student_class.student} ({self.lg.task_name})"
+        return f"{self.first_name} {self.last_name} ({self.grade_level.grade_level_name})"
