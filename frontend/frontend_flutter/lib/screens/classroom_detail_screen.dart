@@ -24,14 +24,14 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _localStudents = List<StudentModel>.from(widget.classroom.students ?? []);
+    _localStudents = List<StudentModel>.from(widget.classroom.students);
   }
 
   @override
   void didUpdateWidget(covariant ClassroomDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_hasUnsavedChanges && oldWidget.classroom != widget.classroom) {
-      _localStudents = List<StudentModel>.from(widget.classroom.students ?? []);
+      _localStudents = List<StudentModel>.from(widget.classroom.students);
     }
   }
 
@@ -42,12 +42,18 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
     return sortedList;
   }
 
+  String _formatPercentage(double value) {
+    // If backend returns a decimal (0.0 to 1.0), scale it to 0-100%
+    final normalized = (value <= 1.0 && value > 0.0) ? value * 100 : value;
+    return '${normalized.toStringAsFixed(1)}%';
+  }
+
   void _openStudentDialog({StudentModel? existingStudent}) {
     final firstNameController = TextEditingController(text: existingStudent?.firstName ?? '');
     final lastNameController = TextEditingController(text: existingStudent?.lastName ?? '');
     final lrnController = TextEditingController(text: existingStudent?.lrn ?? '');
 
-    final availableGradeLevels = widget.classroom.gradeLevels ?? [];
+    final availableGradeLevels = widget.classroom.gradeLevels;
     int? glId = existingStudent?.glId;
 
     if (glId != null && !availableGradeLevels.any((gl) => gl.glId == glId)) {
@@ -175,25 +181,23 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
     });
   }
 
-  void _navigateToAttendance(StudentModel student) {
+  void _navigateToAttendance() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => AttendanceScreen(
           classroom: widget.classroom,
-          student: student,
         ),
       ),
     );
   }
 
-  void _navigateToGrading(StudentModel student) {
+  void _navigateToGrading() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => StudentGradeBatchScreen(
           classroom: widget.classroom,
-          student: student,
         ),
       ),
     );
@@ -210,8 +214,10 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
       schoolYear: widget.classroom.schoolYear,
       isActive: widget.classroom.isActive,
       adviser: widget.classroom.adviser,
-      gradeLevelIds: (widget.classroom.gradeLevels ?? []).map((g) => g.glId).toList(),
-      lessonPlanId: widget.classroom.lessonPlan?.lpId,
+      gradeLevelIds: widget.classroom.gradeLevelIds.isNotEmpty
+          ? widget.classroom.gradeLevelIds
+          : widget.classroom.gradeLevels.map((g) => g.glId).toList(),
+      lessonPlanId: widget.classroom.lessonPlanId ?? widget.classroom.lessonPlan?.lpId,
       students: _localStudents,
     );
 
@@ -227,7 +233,10 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update classroom roster: $e')),
+          SnackBar(
+            content: Text('Failed to update classroom roster: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -343,7 +352,7 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
                           title: Text(student.sortableName,
                               style: const TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: Text(
-                            'LRN: ${student.lrn ?? "N/A"} | GL: ${student.glId} | Grade Avg: ${(student.gradeAvg * 100).toStringAsFixed(1)}%',
+                            'LRN: ${student.lrn ?? "N/A"} | Att: ${_formatPercentage(student.attendanceRate)} | Grade Avg: ${_formatPercentage(student.gradeAvg)}',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -351,12 +360,12 @@ class _ClassroomDetailScreenState extends ConsumerState<ClassroomDetailScreen> {
                               IconButton(
                                 icon: const Icon(Icons.calendar_today_outlined, color: Colors.teal),
                                 tooltip: 'Attendance',
-                                onPressed: () => _navigateToAttendance(student),
+                                onPressed: _navigateToAttendance,
                               ),
                               IconButton(
                                 icon: const Icon(Icons.grade_outlined, color: Colors.orange),
                                 tooltip: 'Grading',
-                                onPressed: () => _navigateToGrading(student),
+                                onPressed: _navigateToGrading,
                               ),
                               IconButton(
                                 icon: const Icon(Icons.edit, color: Colors.blue),

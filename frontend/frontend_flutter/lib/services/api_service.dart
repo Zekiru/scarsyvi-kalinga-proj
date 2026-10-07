@@ -97,11 +97,7 @@ class ApiService {
     }
   }
 
-  Future<ClassroomModel> updateClassroom(ClassroomModel classroom) async {
-    if (classroom.classroomId == null) {
-      throw Exception('Cannot update a classroom without a classroomId');
-    }
-
+  Future<void> updateClassroom(ClassroomModel classroom) async {
     final headers = await _getHeaders();
     final response = await http.put(
       Uri.parse('${configuredBaseUrl}/classrooms/${classroom.classroomId}/'),
@@ -111,10 +107,8 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode == 200) {
-      return ClassroomModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to update classroom: ${response.statusCode}');
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('API Error (${response.statusCode}): ${response.body}');
     }
   }
 
@@ -149,7 +143,7 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode != 201) {
+    if (response.statusCode == 201) {
       throw Exception('Failed to submit attendance');
     }
   }
@@ -165,7 +159,7 @@ class ApiService {
 
     _checkResponse(response);
 
-    if (response.statusCode != 201) {
+    if (response.statusCode == 201) {
       throw Exception('Failed to submit student grades');
     }
   }
