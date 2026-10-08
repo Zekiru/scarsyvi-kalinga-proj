@@ -53,6 +53,7 @@ app.*.map.json
 **/.dart_tool/
 **/.pub-cache/
 **/.pub/
+!/build/web/
 
 # Native platform build caches & dependencies
 **/android/.gradle/
