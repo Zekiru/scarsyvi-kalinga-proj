@@ -1,7 +1,19 @@
-class StudentGradeItem {
+import 'package:hive/hive.dart';
+
+part 'student_grade_model.g.dart';
+
+@HiveType(typeId: 11)
+class StudentGradeItem extends HiveObject {
+  @HiveField(0)
   final int studentId;
+
+  @HiveField(1)
   final int gradingTaskId;
+
+  @HiveField(2)
   final double score;
+
+  @HiveField(3)
   final String? feedback;
 
   StudentGradeItem({
@@ -21,7 +33,9 @@ class StudentGradeItem {
   }
 }
 
-class StudentGradeBatchPayload {
+@HiveType(typeId: 12)
+class StudentGradeBatchPayload extends HiveObject {
+  @HiveField(0)
   final List<StudentGradeItem> grades;
 
   StudentGradeBatchPayload({required this.grades});
@@ -33,14 +47,30 @@ class StudentGradeBatchPayload {
   }
 }
 
-class StudentGradeReadModel {
+@HiveType(typeId: 13)
+class StudentGradeReadModel extends HiveObject {
+  @HiveField(0)
   final int id;
+
+  @HiveField(1)
   final int studentId;
+
+  @HiveField(2)
   final String? studentName;
+
+  @HiveField(3)
   final int gradingTaskId;
+
+  @HiveField(4)
   final String? gradingTaskTitle;
+
+  @HiveField(5)
   final double score;
+
+  @HiveField(6)
   final String? feedback;
+
+  @HiveField(7)
   final String? submittedAt;
 
   StudentGradeReadModel({

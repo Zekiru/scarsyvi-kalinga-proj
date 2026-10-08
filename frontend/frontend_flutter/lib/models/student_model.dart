@@ -1,13 +1,43 @@
-enum StudentSortBy { nameAsc, nameDesc, gradeAvgDesc, attendanceRateDesc }
+import 'package:hive/hive.dart';
 
-class StudentModel {
+part 'student_model.g.dart';
+
+@HiveType(typeId: 14)
+enum StudentSortBy {
+  @HiveField(0)
+  nameAsc,
+  @HiveField(1)
+  nameDesc,
+  @HiveField(2)
+  gradeAvgDesc,
+  @HiveField(3)
+  attendanceRateDesc,
+}
+
+@HiveType(typeId: 15)
+class StudentModel extends HiveObject {
+  @HiveField(0)
   final int? studentId;
+
+  @HiveField(1)
   final int glId;
+
+  @HiveField(2)
   final String firstName;
+
+  @HiveField(3)
   final String lastName;
+
+  @HiveField(4)
   final String gender;
+
+  @HiveField(5)
   final String? lrn;
+
+  @HiveField(6)
   final double attendanceRate;
+
+  @HiveField(7)
   final double gradeAvg;
 
   StudentModel({
@@ -50,7 +80,6 @@ class StudentModel {
     };
   }
 
-  /// Comparison helper for sorting student lists
   int compareTo(StudentModel other, StudentSortBy sortBy) {
     switch (sortBy) {
       case StudentSortBy.nameAsc:

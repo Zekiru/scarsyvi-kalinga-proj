@@ -1,10 +1,28 @@
-class MaterialModel {
+import 'package:hive/hive.dart';
+
+part 'material_model.g.dart';
+
+@HiveType(typeId: 10)
+class MaterialModel extends HiveObject {
+  @HiveField(0)
   final int materialId;
+
+  @HiveField(1)
   final String fileName;
+
+  @HiveField(2)
   final String fileUrl;
+
+  @HiveField(3)
   final String fileType;
+
+  @HiveField(4)
   final int fileSizeKb;
+
+  @HiveField(5)
   final String? description;
+
+  @HiveField(6)
   final bool isOfflineCached;
 
   MaterialModel({

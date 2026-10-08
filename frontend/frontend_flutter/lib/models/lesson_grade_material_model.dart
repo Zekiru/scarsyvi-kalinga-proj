@@ -1,7 +1,14 @@
+import 'package:hive/hive.dart';
 import 'material_model.dart';
 
-class LessonGradeMaterialModel {
+part 'lesson_grade_material_model.g.dart';
+
+@HiveType(typeId: 7)
+class LessonGradeMaterialModel extends HiveObject {
+  @HiveField(0)
   final MaterialModel material;
+
+  @HiveField(1)
   final String? usageInstructions;
 
   LessonGradeMaterialModel({

@@ -1,7 +1,19 @@
-class LessonFlowModel {
+import 'package:hive/hive.dart';
+
+part 'lesson_flow_model.g.dart';
+
+@HiveType(typeId: 5)
+class LessonFlowModel extends HiveObject {
+  @HiveField(0)
   final int? lfId;
+
+  @HiveField(1)
   final int timeMinutes;
+
+  @HiveField(2)
   final String stage;
+
+  @HiveField(3)
   final String description;
 
   LessonFlowModel({

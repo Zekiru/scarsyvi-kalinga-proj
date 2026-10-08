@@ -1,8 +1,22 @@
-class LessonGradingModel {
+import 'package:hive/hive.dart';
+
+part 'lesson_grading_model.g.dart';
+
+@HiveType(typeId: 8)
+class LessonGradingModel extends HiveObject {
+  @HiveField(0)
   final int? lgId;
+
+  @HiveField(1)
   final String taskName;
+
+  @HiveField(2)
   final String? taskDescription;
+
+  @HiveField(3)
   final double gradeWeight;
+
+  @HiveField(4)
   final int maxScore;
 
   LessonGradingModel({

@@ -1,7 +1,14 @@
+import 'package:hive/hive.dart';
 import 'student_model.dart';
 
-class GradeLevelModel {
+part 'classroom_model.g.dart';
+
+@HiveType(typeId: 2)
+class GradeLevelModel extends HiveObject {
+  @HiveField(0)
   final int glId;
+
+  @HiveField(1)
   final String gradeLevelName;
 
   GradeLevelModel({
@@ -24,11 +31,21 @@ class GradeLevelModel {
   }
 }
 
-class LessonPlanSummaryModel {
+@HiveType(typeId: 3)
+class LessonPlanSummaryModel extends HiveObject {
+  @HiveField(0)
   final int lpId;
+
+  @HiveField(1)
   final String lpTitle;
+
+  @HiveField(2)
   final String learningArea;
+
+  @HiveField(3)
   final String primaryLanguage;
+
+  @HiveField(4)
   final String? suggestedDemographic;
 
   LessonPlanSummaryModel({
@@ -50,22 +67,42 @@ class LessonPlanSummaryModel {
   }
 }
 
-class ClassroomModel {
+@HiveType(typeId: 4)
+class ClassroomModel extends HiveObject {
+  @HiveField(0)
   final int? classroomId;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final String schoolName;
+
+  @HiveField(3)
   final String? section;
+
+  @HiveField(4)
   final String schoolYear;
+
+  @HiveField(5)
   final bool isActive;
+
+  @HiveField(6)
   final int? adviser;
+
+  @HiveField(7)
   final List<StudentModel> students;
-  
-  // Read Expansion Fields
+
+  @HiveField(8)
   final List<GradeLevelModel> gradeLevels;
+
+  @HiveField(9)
   final LessonPlanSummaryModel? lessonPlan;
 
-  // Write IDs for POST / PUT operations
+  @HiveField(10)
   final List<int> gradeLevelIds;
+
+  @HiveField(11)
   final int? lessonPlanId;
 
   ClassroomModel({
@@ -83,7 +120,6 @@ class ClassroomModel {
     this.lessonPlanId,
   });
 
-  /// Non-destructive helper to return sorted students
   List<StudentModel> getSortedStudents([StudentSortBy sortBy = StudentSortBy.nameAsc]) {
     final sortedList = List<StudentModel>.from(students);
     sortedList.sort((a, b) => a.compareTo(b, sortBy));
@@ -126,7 +162,6 @@ class ClassroomModel {
     );
   }
 
-  /// Serializer for creating/updating classrooms matching DRF write schema
   Map<String, dynamic> toWriteJson() {
     return {
       if (classroomId != null) 'classroom_id': classroomId,

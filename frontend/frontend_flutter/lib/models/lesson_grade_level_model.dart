@@ -1,22 +1,53 @@
+import 'package:hive/hive.dart';
 import 'lesson_flow_model.dart';
 import 'lesson_grading_model.dart';
 import 'lesson_grade_material_model.dart';
 
-class LessonGradeLevelModel {
+part 'lesson_grade_level_model.g.dart';
+
+@HiveType(typeId: 6)
+class LessonGradeLevelModel extends HiveObject {
+  @HiveField(0)
   final int glId;
+
+  @HiveField(1)
   final String? gradeLevelName;
+
+  @HiveField(2)
   final String? iContentStandard;
+
+  @HiveField(3)
   final String? iPerformanceStandard;
+
+  @HiveField(4)
   final String? iCompetenciesCodes;
+
+  @HiveField(5)
   final String? iObjectives;
+
+  @HiveField(6)
   final String? lContext;
+
+  @HiveField(7)
   final String? wReflectionQuestions;
+
+  @HiveField(8)
   final String? reRemediation;
+
+  @HiveField(9)
   final String? reEnrichment;
+
+  @HiveField(10)
   final List<LessonFlowModel> flows;
+
+  @HiveField(11)
   final List<LessonGradingModel> gradingTasks;
+
+  @HiveField(12)
   final List<LessonGradeMaterialModel> materialsDetail;
-  final List<int> materialIds; // Used for write (POST/PUT) payloads
+
+  @HiveField(13)
+  final List<int> materialIds;
 
   LessonGradeLevelModel({
     required this.glId,
@@ -70,7 +101,6 @@ class LessonGradeLevelModel {
     );
   }
 
-  /// Output serializer for POST/PUT requests matching LessonGradeLevelWriteSerializer
   Map<String, dynamic> toWriteJson() {
     return {
       'gl_id': glId,
