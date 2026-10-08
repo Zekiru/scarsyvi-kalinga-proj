@@ -1,5 +1,5 @@
 from django.db.models import Count, Q, FloatField, ExpressionWrapper, F, Sum, Prefetch
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, NullIf
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -32,18 +32,20 @@ class ClassroomViewSet(viewsets.ModelViewSet):
                 distinct=True
             )
         ).annotate(
+            # Wrapped denominator in NullIf to prevent 0 division when no sessions exist
             attendance_rate=Coalesce(
                 ExpressionWrapper(
-                    (F('present_sessions') * 100.0) / F('total_sessions'),
+                    (F('present_sessions') * 100.0) / NullIf(F('total_sessions'), 0),
                     output_field=FloatField()
                 ),
                 100.0  # Defaults to 100% attendance if no sessions logged yet
             ),
 
             # 2. Recorded Weighted Grades Calculation (score / max_score * grade_weight)
+            # Wrapped max_score in NullIf to prevent 0 division if max_score is 0
             total_earned_points=Sum(
                 ExpressionWrapper(
-                    (F('grades__score') * 100.0 / F('grades__grading_task__max_score'))
+                    (F('grades__score') * 100.0 / NullIf(F('grades__grading_task__max_score'), 0))
                     * F('grades__grading_task__grade_weight'),
                     output_field=FloatField()
                 )
@@ -56,10 +58,10 @@ class ClassroomViewSet(viewsets.ModelViewSet):
             )
         ).annotate(
             # Grade Average: Earned Weighted Points / Recorded Task Weights
-            # Defaults to 100.0% if no grades have been logged yet
+            # Wrapped total_recorded_weights in NullIf to prevent 0 division when no grades logged
             grade_avg=Coalesce(
                 ExpressionWrapper(
-                    F('total_earned_points') / F('total_recorded_weights'),
+                    F('total_earned_points') / NullIf(F('total_recorded_weights'), 0),
                     output_field=FloatField()
                 ),
                 100.0
@@ -134,14 +136,14 @@ class StudentViewSet(viewsets.ModelViewSet):
         ).annotate(
             attendance_rate=Coalesce(
                 ExpressionWrapper(
-                    (F('present_sessions') * 100.0) / F('total_sessions'),
+                    (F('present_sessions') * 100.0) / NullIf(F('total_sessions'), 0),
                     output_field=FloatField()
                 ),
                 100.0
             ),
             total_earned_points=Sum(
                 ExpressionWrapper(
-                    (F('grades__score') * 100.0 / F('grades__grading_task__max_score'))
+                    (F('grades__score') * 100.0 / NullIf(F('grades__grading_task__max_score'), 0))
                     * F('grades__grading_task__grade_weight'),
                     output_field=FloatField()
                 )
@@ -155,7 +157,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         ).annotate(
             grade_avg=Coalesce(
                 ExpressionWrapper(
-                    F('total_earned_points') / F('total_recorded_weights'),
+                    F('total_earned_points') / NullIf(F('total_recorded_weights'), 0),
                     output_field=FloatField()
                 ),
                 100.0
