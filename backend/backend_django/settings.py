@@ -17,8 +17,20 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = ['*'] if DEBUG else os.getenv('ALLOWED_HOSTS', '.onrender.com').split(',')
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG
+
 if not DEBUG:
-    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+    # Read environment variable and filter out empty strings
+    cors_origins = [
+        origin.strip() 
+        for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') 
+        if origin.strip()
+    ]
+    
+    # If no specific origins were provided in Render env vars, fallback to allow all during initial setup
+    if cors_origins:
+        CORS_ALLOWED_ORIGINS = cors_origins
+    else:
+        CORS_ALLOW_ALL_ORIGINS = True
 
 INSTALLED_APPS = [
     'django.contrib.admin',
