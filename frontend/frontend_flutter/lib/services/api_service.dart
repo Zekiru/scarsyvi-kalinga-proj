@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb, VoidCallback;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, VoidCallback;
 import 'package:http/http.dart' as http;
 
 import '../models/classroom_model.dart';
@@ -13,7 +13,14 @@ class ApiService {
   final TokenService _tokenService = TokenService();
   VoidCallback? onUnauthenticated;
 
-  static String get baseUrl {
+  /// Production Render base URL
+  static const String _productionUrl = 'https://scarsyvi-kalinga-proj.onrender.com/api/v1';
+
+  /// Extended timeout duration to handle Render free-tier cold starts (spins down after 15 mins)
+  static const Duration requestTimeout = Duration(seconds: 45);
+
+  /// Resolves local dev fallback URLs depending on platform
+  static String get localBaseUrl {
     if (kIsWeb) {
       return 'http://127.0.0.1:8000/api/v1';
     } else if (Platform.isAndroid) {
@@ -23,9 +30,15 @@ class ApiService {
     }
   }
 
+  /// Default API endpoint: Uses production Render URL, or allows overriding via `--dart-define=BASE_URL=...`
   static String get configuredBaseUrl {
     const envUrl = String.fromEnvironment('BASE_URL');
-    return envUrl.isNotEmpty ? envUrl : baseUrl;
+    if (envUrl.isNotEmpty) return envUrl;
+
+    // Use production URL by default. If debugging locally and wanting local backend,
+    // pass `--dart-define=USE_LOCAL_BACKEND=true` when launching.
+    const useLocal = bool.fromEnvironment('USE_LOCAL_BACKEND', defaultValue: false);
+    return useLocal ? localBaseUrl : _productionUrl;
   }
 
   Future<Map<String, String>> _getHeaders() async {
@@ -45,11 +58,13 @@ class ApiService {
 
   // --- Auth ---
   Future<String> login(String username, String password) async {
-    final response = await http.post(
-      Uri.parse('${configuredBaseUrl}/api-token-auth/'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$configuredBaseUrl/api-token-auth/'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'username': username, 'password': password}),
+        )
+        .timeout(requestTimeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -62,10 +77,12 @@ class ApiService {
   // --- Classrooms ---
   Future<List<ClassroomModel>> fetchClassrooms() async {
     final headers = await _getHeaders();
-    final response = await http.get(
-      Uri.parse('${configuredBaseUrl}/classrooms/'),
-      headers: headers,
-    );
+    final response = await http
+        .get(
+          Uri.parse('$configuredBaseUrl/classrooms/'),
+          headers: headers,
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
@@ -73,17 +90,19 @@ class ApiService {
       final List<dynamic> data = jsonDecode(response.body);
       return data.map((json) => ClassroomModel.fromJson(json)).toList();
     } else {
-      throw Exception('Failed to load classrooms');
+      throw Exception('Failed to load classrooms (${response.statusCode})');
     }
   }
 
   Future<ClassroomModel> createClassroom(ClassroomModel classroom) async {
     final headers = await _getHeaders();
-    final response = await http.post(
-      Uri.parse('${configuredBaseUrl}/classrooms/'),
-      headers: headers,
-      body: jsonEncode(classroom.toWriteJson()),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$configuredBaseUrl/classrooms/'),
+          headers: headers,
+          body: jsonEncode(classroom.toWriteJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
@@ -96,30 +115,34 @@ class ApiService {
 
   Future<void> updateClassroom(ClassroomModel classroom) async {
     final headers = await _getHeaders();
-    final response = await http.put(
-      Uri.parse('${configuredBaseUrl}/classrooms/${classroom.classroomId}/'),
-      headers: headers,
-      body: jsonEncode(classroom.toWriteJson()),
-    );
+    final response = await http
+        .put(
+          Uri.parse('$configuredBaseUrl/classrooms/${classroom.classroomId}/'),
+          headers: headers,
+          body: jsonEncode(classroom.toWriteJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('API Error (${response.statusCode}): ${response.body}');
+      throw Exception('API Error (${response.statusCode}):${response.body}');
     }
   }
 
   Future<void> deleteClassroom(int id) async {
     final headers = await _getHeaders();
-    final response = await http.delete(
-      Uri.parse('${configuredBaseUrl}/classrooms/$id/'),
-      headers: headers,
-    );
+    final response = await http
+        .delete(
+          Uri.parse('$configuredBaseUrl/classrooms/$id/'),
+          headers: headers,
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete classroom (${response.statusCode}): ${response.body}');
+      throw Exception('Failed to delete classroom (${response.statusCode}):${response.body}');
     }
   }
 
@@ -130,8 +153,8 @@ class ApiService {
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (learningArea != null && learningArea.isNotEmpty) queryParams['learning_area'] = learningArea;
 
-    final uri = Uri.parse('${configuredBaseUrl}/lesson-plans/').replace(queryParameters: queryParams);
-    final response = await http.get(uri, headers: headers);
+    final uri = Uri.parse('$configuredBaseUrl/lesson-plans/').replace(queryParameters: queryParams);
+    final response = await http.get(uri, headers: headers).timeout(requestTimeout);
 
     _checkResponse(response);
 
@@ -145,11 +168,13 @@ class ApiService {
 
   Future<LessonPlanModel> createLessonPlan(LessonPlanModel lessonPlan) async {
     final headers = await _getHeaders();
-    final response = await http.post(
-      Uri.parse('${configuredBaseUrl}/lesson-plans/'),
-      headers: headers,
-      body: jsonEncode(lessonPlan.toWriteJson()),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$configuredBaseUrl/lesson-plans/'),
+          headers: headers,
+          body: jsonEncode(lessonPlan.toWriteJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
@@ -162,64 +187,72 @@ class ApiService {
 
   Future<LessonPlanModel> updateLessonPlan(LessonPlanModel lessonPlan) async {
     final headers = await _getHeaders();
-    final response = await http.put(
-      Uri.parse('${configuredBaseUrl}/lesson-plans/${lessonPlan.lpId}/'),
-      headers: headers,
-      body: jsonEncode(lessonPlan.toWriteJson()),
-    );
+    final response = await http
+        .put(
+          Uri.parse('$configuredBaseUrl/lesson-plans/${lessonPlan.lpId}/'),
+          headers: headers,
+          body: jsonEncode(lessonPlan.toWriteJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode == 200) {
       return LessonPlanModel.fromJson(jsonDecode(response.body));
     } else {
-      throw Exception('Failed to update lesson plan (${response.statusCode}): ${response.body}');
+      throw Exception('Failed to update lesson plan (${response.statusCode}):${response.body}');
     }
   }
 
   Future<void> deleteLessonPlan(int id) async {
     final headers = await _getHeaders();
-    final response = await http.delete(
-      Uri.parse('${configuredBaseUrl}/lesson-plans/$id/'),
-      headers: headers,
-    );
+    final response = await http
+        .delete(
+          Uri.parse('$configuredBaseUrl/lesson-plans/$id/'),
+          headers: headers,
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete lesson plan (${response.statusCode}): ${response.body}');
+      throw Exception('Failed to delete lesson plan (${response.statusCode}):${response.body}');
     }
   }
 
   // --- Attendance ---
   Future<void> submitAttendance(int classroomId, AttendanceSessionModel session) async {
     final headers = await _getHeaders();
-    final response = await http.post(
-      Uri.parse('${configuredBaseUrl}/classrooms/$classroomId/attendance/'),
-      headers: headers,
-      body: jsonEncode(session.toJson()),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$configuredBaseUrl/classrooms/$classroomId/attendance/'),
+          headers: headers,
+          body: jsonEncode(session.toJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
-      throw Exception('Failed to submit attendance (${response.statusCode}): ${response.body}');
+      throw Exception('Failed to submit attendance (${response.statusCode}):${response.body}');
     }
   }
 
   // --- Grades ---
   Future<void> submitGrades(int classroomId, StudentGradeBatchPayload batchPayload) async {
     final headers = await _getHeaders();
-    final response = await http.post(
-      Uri.parse('${configuredBaseUrl}/classrooms/$classroomId/grades/'),
-      headers: headers,
-      body: jsonEncode(batchPayload.toJson()),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$configuredBaseUrl/classrooms/$classroomId/grades/'),
+          headers: headers,
+          body: jsonEncode(batchPayload.toJson()),
+        )
+        .timeout(requestTimeout);
 
     _checkResponse(response);
 
     if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
-      throw Exception('Failed to submit student grades (${response.statusCode}): ${response.body}');
+      throw Exception('Failed to submit student grades (${response.statusCode}):${response.body}');
     }
   }
 }
