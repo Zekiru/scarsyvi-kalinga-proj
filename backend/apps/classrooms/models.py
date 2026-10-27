@@ -12,16 +12,23 @@ class Classroom(models.Model):
     section = models.CharField(max_length=100, blank=True, null=True)
     school_year = models.CharField(max_length=20, help_text="e.g., 2026-2027")
     is_active = models.BooleanField(default=True)
-    
+
     # Relationships
     adviser = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classrooms")
     grade_levels = models.ManyToManyField(GradeLevel, related_name="classrooms")
     lesson_plan = models.ForeignKey(
-        LessonPlan, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        LessonPlan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="classrooms"
+    )
+    # Students are linked through the StudentClassroom join table, so a student
+    # can be enrolled in many classrooms (and a classroom has many students).
+    students = models.ManyToManyField(
+        'Student',
+        through='StudentClassroom',
+        related_name='classrooms',
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -38,9 +45,8 @@ class Student(models.Model):
     ]
 
     student_id = models.AutoField(primary_key=True)
-    classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name="students")
     grade_level = models.ForeignKey(GradeLevel, on_delete=models.CASCADE, related_name="students")
-    
+
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
@@ -50,6 +56,21 @@ class Student(models.Model):
         return f"{self.first_name} {self.last_name} ({self.grade_level.grade_level_name})"
 
 
+class StudentClassroom(models.Model):
+    """Enrollment: links one student to one classroom."""
+    # NOTE: related_names changed from 'students'/'classrooms' to 'enrollments'
+    # so they no longer clash with the Classroom.students / Student.classrooms
+    # many-to-many accessors above. No database change is needed for this.
+    classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name='enrollments')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='enrollments')
+
+    class Meta:
+        unique_together = ('classroom', 'student')
+
+    def __str__(self):
+        return f"{self.student_id} in {self.classroom_id}"
+
+
 class AttendanceSession(models.Model):
     classroom = models.ForeignKey(Classroom, on_delete=models.CASCADE, related_name='attendance_sessions')
     date = models.DateField()
@@ -57,6 +78,7 @@ class AttendanceSession(models.Model):
 
     class Meta:
         unique_together = ('classroom', 'date')
+
 
 class StudentAttendance(models.Model):
     STATUS_CHOICES = [
