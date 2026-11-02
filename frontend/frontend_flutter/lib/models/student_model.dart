@@ -74,7 +74,7 @@ class StudentModel extends HiveObject {
       'first_name': firstName,
       'last_name': lastName,
       'gender': gender,
-      if (lrn != null) 'lrn': lrn,
+      'lrn': lrn,
       'attendance_rate': attendanceRate,
       'grade_avg': gradeAvg,
     };
