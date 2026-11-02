@@ -23,10 +23,22 @@ class ApiService {
   set onUnauthenticated(VoidCallback? callback) =>
       _api.onUnauthenticated = callback;
 
+  /// Called after every request: true = the server answered, false = it didn't.
+  void Function(bool reachable)? get onReachabilityChanged =>
+      _api.onReachabilityChanged;
+  set onReachabilityChanged(void Function(bool reachable)? callback) =>
+      _api.onReachabilityChanged = callback;
+
   // Kept so existing references like ApiService.configuredBaseUrl still work.
   static Duration get requestTimeout => ApiConfig.requestTimeout;
   static String get localBaseUrl => ApiConfig.localBaseUrl;
   static String get configuredBaseUrl => ApiConfig.baseUrl;
+
+  /// Sends an already-built request. Used to replay queued offline changes.
+  Future<void> sendRaw(String method, String path, Object? body) async {
+    final response = await _api.request(method, path, body: body);
+    response.ensureSuccess('Request failed');
+  }
 
   // --- Auth ---
   Future<String> login(String username, String password) async {

@@ -50,12 +50,27 @@ class AttendanceSessionModel extends HiveObject {
   @HiveField(3)
   final List<StudentAttendanceRecord> records;
 
+  /// Which classroom this session belongs to. Added after the first release:
+  /// sessions saved by older versions load with null.
+  @HiveField(4)
+  final int? classroomId;
+
   AttendanceSessionModel({
     this.id,
     required this.date,
     this.remarks,
     required this.records,
+    this.classroomId,
   });
+
+  /// Formats a date as YYYY-MM-DD using the device's LOCAL time, so a teacher
+  /// in Manila taking attendance at 7 AM doesn't get yesterday's date.
+  static String formatDate(DateTime date) {
+    final local = date.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day';
+  }
 
   factory AttendanceSessionModel.fromJson(Map<String, dynamic> json) {
     return AttendanceSessionModel(
@@ -66,9 +81,12 @@ class AttendanceSessionModel extends HiveObject {
               ?.map((item) => StudentAttendanceRecord.fromJson(item as Map<String, dynamic>))
               .toList() ??
           [],
+      classroomId: json['classroom_id'] as int?,
     );
   }
 
+  /// Body sent to the server. classroomId is not included: it is already in
+  /// the URL (/classrooms/{id}/attendance/).
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,

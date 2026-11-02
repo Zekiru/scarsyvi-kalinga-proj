@@ -74,6 +74,7 @@ class StudentModel extends HiveObject {
       'first_name': firstName,
       'last_name': lastName,
       'gender': gender,
+      // Always sent (even when null) so a teacher can clear an LRN.
       'lrn': lrn,
       'attendance_rate': attendanceRate,
       'grade_avg': gradeAvg,
