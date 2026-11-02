@@ -46,6 +46,13 @@ class ClassroomListScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _handleRefresh(WidgetRef ref) async {
+    // 1. Flush queued offline requests to backend if connected
+    await ref.read(networkSyncManagerProvider).syncPendingData();
+    // 2. Refresh classroom provider state
+    ref.read(classroomsProvider.notifier).refresh();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final classroomsAsync = ref.watch(classroomsProvider);
@@ -56,7 +63,7 @@ class ClassroomListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(classroomsProvider.notifier).refresh(),
+            onPressed: () => _handleRefresh(ref),
           ),
         ],
       ),

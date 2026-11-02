@@ -1,22 +1,26 @@
 import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:http/http.dart' as http;
 
+import '../models/attendance_model.dart';
 import '../models/classroom_model.dart';
 import '../models/lesson_plan_model.dart';
-import '../models/attendance_model.dart';
 import '../models/student_grade_model.dart';
 import 'api_client.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 import 'api_response.dart';
+import 'local_storage_service.dart';
 
-export 'api_exception.dart'; // so screens can import ApiException from here
+export 'api_exception.dart';
 
 /// The app's API endpoints. HTTP details live in [ApiClient].
 class ApiService {
-  ApiService({http.Client? client}) : _api = ApiClient(client: client);
+  ApiService({http.Client? client, LocalStorageService? localStorageService})
+      : _api = ApiClient(client: client),
+        _local = localStorageService ?? LocalStorageService();
 
   final ApiClient _api;
+  final LocalStorageService _local;
 
   /// Called whenever an authenticated request comes back 401.
   VoidCallback? get onUnauthenticated => _api.onUnauthenticated;
@@ -29,7 +33,6 @@ class ApiService {
   set onReachabilityChanged(void Function(bool reachable)? callback) =>
       _api.onReachabilityChanged = callback;
 
-  // Kept so existing references like ApiService.configuredBaseUrl still work.
   static Duration get requestTimeout => ApiConfig.requestTimeout;
   static String get localBaseUrl => ApiConfig.localBaseUrl;
   static String get configuredBaseUrl => ApiConfig.baseUrl;
@@ -57,14 +60,25 @@ class ApiService {
 
   // --- Classrooms ---
   Future<List<ClassroomModel>> fetchClassrooms() async {
-    final response = await _api.request('GET', '/classrooms/');
-    response.ensureSuccess('Failed to load classrooms');
-    return response.decodeList(ClassroomModel.fromJson);
+    try {
+      final response = await _api.request('GET', '/classrooms/');
+      response.ensureSuccess('Failed to load classrooms');
+      final classrooms = response.decodeList(ClassroomModel.fromJson);
+      await _local.cacheClassrooms(classrooms);
+      return classrooms;
+    } catch (_) {
+      final cached = _local.getCachedClassrooms();
+      if (cached.isNotEmpty) return cached;
+      rethrow;
+    }
   }
 
   Future<ClassroomModel> createClassroom(ClassroomModel classroom) async {
-    final response =
-        await _api.request('POST', '/classrooms/', body: classroom.toWriteJson());
+    final response = await _api.request(
+      'POST',
+      '/classrooms/',
+      body: classroom.toWriteJson(),
+    );
     response.ensureSuccess('Failed to create classroom');
     return ClassroomModel.fromJson(response.jsonMap);
   }
@@ -88,17 +102,25 @@ class ApiService {
     String? search,
     String? learningArea,
   }) async {
-    final response = await _api.request(
-      'GET',
-      '/lesson-plans/',
-      query: {
-        if (search != null && search.isNotEmpty) 'search': search,
-        if (learningArea != null && learningArea.isNotEmpty)
-          'learning_area': learningArea,
-      },
-    );
-    response.ensureSuccess('Failed to load lesson plans');
-    return response.decodeList(LessonPlanModel.fromJson);
+    try {
+      final response = await _api.request(
+        'GET',
+        '/lesson-plans/',
+        query: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (learningArea != null && learningArea.isNotEmpty)
+            'learning_area': learningArea,
+        },
+      );
+      response.ensureSuccess('Failed to load lesson plans');
+      final plans = response.decodeList(LessonPlanModel.fromJson);
+      await _local.cacheLessonPlans(plans);
+      return plans;
+    } catch (_) {
+      final cached = _local.getCachedLessonPlans();
+      if (cached.isNotEmpty) return cached;
+      rethrow;
+    }
   }
 
   Future<LessonPlanModel> createLessonPlan(LessonPlanModel lessonPlan) async {

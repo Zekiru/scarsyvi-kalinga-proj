@@ -101,13 +101,18 @@ class NetworkSyncManager {
 
   // Convenience wrappers: use these from screens/providers instead of ApiService.
 
-  Future<bool> submitAttendance(int classroomId, AttendanceSessionModel session) =>
-      sendOrQueue(
-        type: attendanceType,
-        method: 'POST',
-        path: '/classrooms/$classroomId/attendance/',
-        body: session.toJson(),
-      );
+  Future<bool> submitAttendance(int classroomId, AttendanceSessionModel session) async {
+    // 1. Save locally to Hive immediately so offline data is cached locally
+    await _local.saveAttendanceSession(session);
+
+    // 2. Queue or send over network
+    return sendOrQueue(
+      type: attendanceType,
+      method: 'POST',
+      path: '/classrooms/$classroomId/attendance/',
+      body: session.toJson(),
+    );
+  }
 
   Future<bool> submitGrades(int classroomId, StudentGradeBatchPayload payload) =>
       sendOrQueue(
