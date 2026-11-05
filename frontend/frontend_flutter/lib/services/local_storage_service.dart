@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import '../models/attendance_model.dart';
 import '../models/classroom_model.dart';
 import '../models/lesson_plan_model.dart';
+import 'token_service.dart';
 
 /// A change made while offline, waiting to be sent to the server.
 /// Stored as a JSON string, so it needs no Hive adapter.
@@ -49,6 +50,11 @@ class PendingOp {
 }
 
 class LocalStorageService {
+  LocalStorageService({TokenService? tokenService})
+      : _tokens = tokenService ?? TokenService();
+
+  final TokenService _tokens;
+
   // Cache boxes: disposable copies of what the server has.
   final Box<ClassroomModel> _classroomBox =
       Hive.box<ClassroomModel>('classrooms_box');
@@ -60,6 +66,21 @@ class LocalStorageService {
   // Pending changes that have NOT reached the server yet. Never wiped by cache
   // refreshes or logout.
   final Box<String> _pendingBox = Hive.box<String>('pending_ops_box');
+
+  // ==========================================
+  // AUTH DELEGATES
+  // ==========================================
+  Future<void> cacheToken(String token) async {
+    await _tokens.saveToken(token);
+  }
+
+  Future<String?> getCachedToken() async {
+    return await _tokens.getToken();
+  }
+
+  Future<void> clearToken() async {
+    await _tokens.clearToken();
+  }
 
   /// Writes the new items first, then removes entries that are no longer on
   /// the server, so the cache is never empty midway (unlike clear + putAll).

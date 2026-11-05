@@ -45,17 +45,28 @@ class ApiService {
 
   // --- Auth ---
   Future<String> login(String username, String password) async {
-    final response = await _api.request(
-      'POST',
-      '/api-token-auth/',
-      body: {'username': username, 'password': password},
-      authenticated: false,
-    );
+    try {
+      final response = await _api.request(
+        'POST',
+        '/api-token-auth/',
+        body: {'username': username, 'password': password},
+        authenticated: false,
+      );
 
-    if (response.statusCode != 200) {
-      throw const ApiException('Invalid username or password');
+      if (response.statusCode != 200) {
+        throw const ApiException('Invalid username or password');
+      }
+      final token = response.jsonMap['token'] as String;
+      await _local.cacheToken(token);
+      return token;
+    } catch (e) {
+      // Offline fallback: return cached token if available when host lookup or connection fails
+      final cachedToken = await _local.getCachedToken();
+      if (cachedToken != null) {
+        return cachedToken;
+      }
+      rethrow;
     }
-    return response.jsonMap['token'] as String;
   }
 
   // --- Classrooms ---
