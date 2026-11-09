@@ -1,258 +1,187 @@
-import 'dart:convert';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, VoidCallback;
+import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:http/http.dart' as http;
 
+import '../models/attendance_model.dart';
 import '../models/classroom_model.dart';
 import '../models/lesson_plan_model.dart';
-import '../models/attendance_model.dart';
 import '../models/student_grade_model.dart';
-import 'token_service.dart';
+import 'api_client.dart';
+import 'api_config.dart';
+import 'api_exception.dart';
+import 'api_response.dart';
+import 'local_storage_service.dart';
 
+export 'api_exception.dart';
+
+/// The app's API endpoints. HTTP details live in [ApiClient].
 class ApiService {
-  final TokenService _tokenService = TokenService();
-  VoidCallback? onUnauthenticated;
+  ApiService({http.Client? client, LocalStorageService? localStorageService})
+      : _api = ApiClient(client: client),
+        _local = localStorageService ?? LocalStorageService();
 
-  /// Production Render base URL
-  static const String _productionUrl = 'https://scarsyvi-kalinga-proj.onrender.com/api/v1';
+  final ApiClient _api;
+  final LocalStorageService _local;
 
-  /// Extended timeout duration to handle Render free-tier cold starts (spins down after 15 mins)
-  static const Duration requestTimeout = Duration(seconds: 45);
+  /// Called whenever an authenticated request comes back 401.
+  VoidCallback? get onUnauthenticated => _api.onUnauthenticated;
+  set onUnauthenticated(VoidCallback? callback) =>
+      _api.onUnauthenticated = callback;
 
-  /// Resolves local dev fallback URLs depending on platform
-  static String get localBaseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000/api/v1';
-    } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api/v1';
-    } else {
-      return 'http://127.0.0.1:8000/api/v1';
-    }
-  }
+  /// Called after every request: true = the server answered, false = it didn't.
+  void Function(bool reachable)? get onReachabilityChanged =>
+      _api.onReachabilityChanged;
+  set onReachabilityChanged(void Function(bool reachable)? callback) =>
+      _api.onReachabilityChanged = callback;
 
-  /// Default API endpoint: Uses production Render URL, or allows overriding via `--dart-define=BASE_URL=...`
-  static String get configuredBaseUrl {
-    const envUrl = String.fromEnvironment('BASE_URL');
-    if (envUrl.isNotEmpty) return envUrl;
+  static Duration get requestTimeout => ApiConfig.requestTimeout;
+  static String get localBaseUrl => ApiConfig.localBaseUrl;
+  static String get configuredBaseUrl => ApiConfig.baseUrl;
 
-    // Use production URL by default. If debugging locally and wanting local backend,
-    // pass `--dart-define=USE_LOCAL_BACKEND=true` when launching.
-    const useLocal = bool.fromEnvironment('USE_LOCAL_BACKEND', defaultValue: false);
-    return useLocal ? localBaseUrl : _productionUrl;
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _tokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Token $token',
-    };
-  }
-
-  void _checkResponse(http.Response response) {
-    if (response.statusCode == 401) {
-      onUnauthenticated?.call();
-      throw Exception('Session expired. Please log in again.');
-    }
+  /// Sends an already-built request. Used to replay queued offline changes.
+  Future<void> sendRaw(String method, String path, Object? body) async {
+    final response = await _api.request(method, path, body: body);
+    response.ensureSuccess('Request failed');
   }
 
   // --- Auth ---
   Future<String> login(String username, String password) async {
-    final response = await http
-        .post(
-          Uri.parse('$configuredBaseUrl/api-token-auth/'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'username': username, 'password': password}),
-        )
-        .timeout(requestTimeout);
+    try {
+      final response = await _api.request(
+        'POST',
+        '/api-token-auth/',
+        body: {'username': username, 'password': password},
+        authenticated: false,
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['token'];
-    } else {
-      throw Exception('Invalid username or password');
+      if (response.statusCode != 200) {
+        throw const ApiException('Invalid username or password');
+      }
+      final token = response.jsonMap['token'] as String;
+      await _local.cacheToken(token);
+      return token;
+    } catch (e) {
+      // Offline fallback: return cached token if available when host lookup or connection fails
+      final cachedToken = await _local.getCachedToken();
+      if (cachedToken != null) {
+        return cachedToken;
+      }
+      rethrow;
     }
   }
 
   // --- Classrooms ---
   Future<List<ClassroomModel>> fetchClassrooms() async {
-    final headers = await _getHeaders();
-    final response = await http
-        .get(
-          Uri.parse('$configuredBaseUrl/classrooms/'),
-          headers: headers,
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => ClassroomModel.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load classrooms (${response.statusCode})');
+    try {
+      final response = await _api.request('GET', '/classrooms/');
+      response.ensureSuccess('Failed to load classrooms');
+      final classrooms = response.decodeList(ClassroomModel.fromJson);
+      await _local.cacheClassrooms(classrooms);
+      return classrooms;
+    } catch (_) {
+      final cached = _local.getCachedClassrooms();
+      if (cached.isNotEmpty) return cached;
+      rethrow;
     }
   }
 
   Future<ClassroomModel> createClassroom(ClassroomModel classroom) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .post(
-          Uri.parse('$configuredBaseUrl/classrooms/'),
-          headers: headers,
-          body: jsonEncode(classroom.toWriteJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      return ClassroomModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to create classroom');
-    }
+    final response = await _api.request(
+      'POST',
+      '/classrooms/',
+      body: classroom.toWriteJson(),
+    );
+    response.ensureSuccess('Failed to create classroom');
+    return ClassroomModel.fromJson(response.jsonMap);
   }
 
   Future<void> updateClassroom(ClassroomModel classroom) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .put(
-          Uri.parse('$configuredBaseUrl/classrooms/${classroom.classroomId}/'),
-          headers: headers,
-          body: jsonEncode(classroom.toWriteJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('API Error (${response.statusCode}):${response.body}');
-    }
+    final response = await _api.request(
+      'PUT',
+      '/classrooms/${classroom.classroomId}/',
+      body: classroom.toWriteJson(),
+    );
+    response.ensureSuccess('Failed to update classroom');
   }
 
   Future<void> deleteClassroom(int id) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .delete(
-          Uri.parse('$configuredBaseUrl/classrooms/$id/'),
-          headers: headers,
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete classroom (${response.statusCode}):${response.body}');
-    }
+    final response = await _api.request('DELETE', '/classrooms/$id/');
+    response.ensureSuccess('Failed to delete classroom');
   }
 
   // --- Lesson Plans ---
-  Future<List<LessonPlanModel>> fetchLessonPlans({String? search, String? learningArea}) async {
-    final headers = await _getHeaders();
-    final queryParams = <String, String>{};
-    if (search != null && search.isNotEmpty) queryParams['search'] = search;
-    if (learningArea != null && learningArea.isNotEmpty) queryParams['learning_area'] = learningArea;
-
-    final uri = Uri.parse('$configuredBaseUrl/lesson-plans/').replace(queryParameters: queryParams);
-    final response = await http.get(uri, headers: headers).timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.map((json) => LessonPlanModel.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load lesson plans');
+  Future<List<LessonPlanModel>> fetchLessonPlans({
+    String? search,
+    String? learningArea,
+  }) async {
+    try {
+      final response = await _api.request(
+        'GET',
+        '/lesson-plans/',
+        query: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (learningArea != null && learningArea.isNotEmpty)
+            'learning_area': learningArea,
+        },
+      );
+      response.ensureSuccess('Failed to load lesson plans');
+      final plans = response.decodeList(LessonPlanModel.fromJson);
+      await _local.cacheLessonPlans(plans);
+      return plans;
+    } catch (_) {
+      final cached = _local.getCachedLessonPlans();
+      if (cached.isNotEmpty) return cached;
+      rethrow;
     }
   }
 
   Future<LessonPlanModel> createLessonPlan(LessonPlanModel lessonPlan) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .post(
-          Uri.parse('$configuredBaseUrl/lesson-plans/'),
-          headers: headers,
-          body: jsonEncode(lessonPlan.toWriteJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      return LessonPlanModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to create lesson plan: ${response.body}');
-    }
+    final response = await _api.request(
+      'POST',
+      '/lesson-plans/',
+      body: lessonPlan.toWriteJson(),
+    );
+    response.ensureSuccess('Failed to create lesson plan');
+    return LessonPlanModel.fromJson(response.jsonMap);
   }
 
   Future<LessonPlanModel> updateLessonPlan(LessonPlanModel lessonPlan) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .put(
-          Uri.parse('$configuredBaseUrl/lesson-plans/${lessonPlan.lpId}/'),
-          headers: headers,
-          body: jsonEncode(lessonPlan.toWriteJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode == 200) {
-      return LessonPlanModel.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to update lesson plan (${response.statusCode}):${response.body}');
-    }
+    final response = await _api.request(
+      'PUT',
+      '/lesson-plans/${lessonPlan.lpId}/',
+      body: lessonPlan.toWriteJson(),
+    );
+    response.ensureSuccess('Failed to update lesson plan');
+    return LessonPlanModel.fromJson(response.jsonMap);
   }
 
   Future<void> deleteLessonPlan(int id) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .delete(
-          Uri.parse('$configuredBaseUrl/lesson-plans/$id/'),
-          headers: headers,
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete lesson plan (${response.statusCode}):${response.body}');
-    }
+    final response = await _api.request('DELETE', '/lesson-plans/$id/');
+    response.ensureSuccess('Failed to delete lesson plan');
   }
 
   // --- Attendance ---
-  Future<void> submitAttendance(int classroomId, AttendanceSessionModel session) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .post(
-          Uri.parse('$configuredBaseUrl/classrooms/$classroomId/attendance/'),
-          headers: headers,
-          body: jsonEncode(session.toJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
-      throw Exception('Failed to submit attendance (${response.statusCode}):${response.body}');
-    }
+  Future<void> submitAttendance(
+    int classroomId,
+    AttendanceSessionModel session,
+  ) async {
+    final response = await _api.request(
+      'POST',
+      '/classrooms/$classroomId/attendance/',
+      body: session.toJson(),
+    );
+    response.ensureSuccess('Failed to submit attendance');
   }
 
   // --- Grades ---
-  Future<void> submitGrades(int classroomId, StudentGradeBatchPayload batchPayload) async {
-    final headers = await _getHeaders();
-    final response = await http
-        .post(
-          Uri.parse('$configuredBaseUrl/classrooms/$classroomId/grades/'),
-          headers: headers,
-          body: jsonEncode(batchPayload.toJson()),
-        )
-        .timeout(requestTimeout);
-
-    _checkResponse(response);
-
-    if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 204) {
-      throw Exception('Failed to submit student grades (${response.statusCode}):${response.body}');
-    }
+  Future<void> submitGrades(
+    int classroomId,
+    StudentGradeBatchPayload batchPayload,
+  ) async {
+    final response = await _api.request(
+      'POST',
+      '/classrooms/$classroomId/grades/',
+      body: batchPayload.toJson(),
+    );
+    response.ensureSuccess('Failed to submit student grades');
   }
 }

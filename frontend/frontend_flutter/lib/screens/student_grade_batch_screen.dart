@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:frontend_flutter/models/student_model.dart';
 import '../models/classroom_model.dart';
-import '../models/lesson_plan_model.dart';
 import '../models/lesson_grading_model.dart';
+import '../models/lesson_plan_model.dart';
 import '../models/student_grade_model.dart';
+import '../models/student_model.dart';
 import '../providers/app_providers.dart';
+import '../services/local_storage_service.dart';
 
 class StudentGradeBatchScreen extends ConsumerStatefulWidget {
   final ClassroomModel classroom;
   final StudentModel? student;
 
   const StudentGradeBatchScreen({
-    super.key, required this.classroom, this.student,
-    });
+    super.key,
+    required this.classroom,
+    this.student,
+  });
 
   @override
-  ConsumerState<StudentGradeBatchScreen> createState() => _StudentGradeBatchScreenState();
+  ConsumerState<StudentGradeBatchScreen> createState() =>
+      _StudentGradeBatchScreenState();
 }
 
-class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScreen> {
+class _StudentGradeBatchScreenState
+    extends ConsumerState<StudentGradeBatchScreen> {
   int? _selectedTaskId;
   int? _selectedTaskGradeLevelId;
   Future<LessonPlanModel?>? _lessonPlanFuture;
@@ -31,7 +36,8 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
     super.initState();
     for (var student in widget.classroom.students) {
       if (student.studentId != null) {
-        _scoreControllers[student.studentId!] = TextEditingController(text: '0.00');
+        _scoreControllers[student.studentId!] =
+            TextEditingController(text: '0.00');
       }
     }
 
@@ -42,11 +48,18 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
   }
 
   Future<LessonPlanModel?> _loadLinkedLessonPlan(int lpId) async {
-    final plans = await ref.read(apiServiceProvider).fetchLessonPlans();
+    // 1. Read from local Hive cache first for reliable offline support
+    final cachedPlans = LocalStorageService().getCachedLessonPlans();
     try {
-      return plans.firstWhere((plan) => plan.lpId == lpId);
+      return cachedPlans.firstWhere((plan) => plan.lpId == lpId);
     } catch (_) {
-      return null;
+      // 2. Fall back to backend network request
+      try {
+        final plans = await ref.read(apiServiceProvider).fetchLessonPlans();
+        return plans.firstWhere((plan) => plan.lpId == lpId);
+      } catch (_) {
+        return null;
+      }
     }
   }
 
@@ -61,18 +74,23 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
   Future<void> _submitGrades() async {
     if (_selectedTaskId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a grading task from the dropdown')),
+        const SnackBar(
+          content: Text('Please select a grading task from the dropdown'),
+        ),
       );
       return;
     }
 
     final eligibleStudents = widget.classroom.students.where((student) {
-      return _selectedTaskGradeLevelId == null || student.glId == _selectedTaskGradeLevelId;
+      return _selectedTaskGradeLevelId == null ||
+          student.glId == _selectedTaskGradeLevelId;
     }).toList();
 
     if (eligibleStudents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No eligible students found for this grade level task.')),
+        const SnackBar(
+          content: Text('No eligible students found for this grade level task.'),
+        ),
       );
       return;
     }
@@ -93,10 +111,21 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
     final payload = StudentGradeBatchPayload(grades: gradeItems);
 
     try {
-      await ref.read(apiServiceProvider).submitGrades(widget.classroom.classroomId!, payload);
+      final syncManager = ref.read(networkSyncManagerProvider);
+      final syncedNow = await syncManager.submitGrades(
+        widget.classroom.classroomId!,
+        payload,
+      );
+
       if (mounted) {
+        final message = syncedNow
+            ? 'Grades submitted to server!'
+            : 'Server unreachable. Grades saved locally and queued for auto-sync.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Grades submitted successfully!')),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 4),
+          ),
         );
         ref.read(classroomsProvider.notifier).refresh();
         Navigator.pop(context);
@@ -136,7 +165,8 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
                 : FutureBuilder<LessonPlanModel?>(
                     future: _lessonPlanFuture,
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
+                      if (snapshot.connectionState ==
+                          ConnectionState.waiting) {
                         return const LinearProgressIndicator();
                       }
                       if (snapshot.hasError) {
@@ -144,7 +174,7 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
                       }
 
                       final plan = snapshot.data;
-                      final taskItems = <Map<String, dynamic>>[];
+                      final taskItems = [];
                       if (plan != null) {
                         for (var gl in plan.gradeLevels) {
                           for (var task in gl.gradingTasks) {
@@ -158,7 +188,9 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
                       }
 
                       if (taskItems.isEmpty) {
-                        return const Text('No grading tasks found in linked lesson plan.');
+                        return const Text(
+                          'No grading tasks found in linked lesson plan.',
+                        );
                       }
 
                       return DropdownButtonFormField<int>(
@@ -180,11 +212,14 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
                         }).toList(),
                         onChanged: (val) {
                           final selectedItem = taskItems.firstWhere(
-                            (item) => (item['task'] as LessonGradingModel).lgId == val,
+                            (item) =>
+                                (item['task'] as LessonGradingModel).lgId ==
+                                val,
                           );
                           setState(() {
                             _selectedTaskId = val;
-                            _selectedTaskGradeLevelId = selectedItem['glId'] as int;
+                            _selectedTaskGradeLevelId =
+                                selectedItem['glId'] as int;
                           });
                         },
                       );
@@ -193,7 +228,8 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
           ),
           if (_selectedTaskGradeLevelId != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -205,30 +241,36 @@ class _StudentGradeBatchScreenState extends ConsumerState<StudentGradeBatchScree
           Expanded(
             child: filteredStudents.isEmpty
                 ? const Center(
-                    child: Text('No students match the selected task grade level.'),
+                    child:
+                        Text('No students match the selected task grade level.'),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12.0, vertical: 8.0),
                     itemCount: filteredStudents.length,
                     itemBuilder: (context, index) {
                       final student = filteredStudents[index];
                       final id = student.studentId!;
                       return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 6.0), // Increased row spacing
+                        margin: const EdgeInsets.symmetric(vertical: 6.0),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12.0, vertical: 8.0),
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(
                               '${student.firstName} ${student.lastName}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
                             ),
                             subtitle: Text('Grade Level ID: ${student.glId}'),
                             trailing: SizedBox(
                               width: 110,
                               child: TextField(
                                 controller: _scoreControllers[id],
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
                                 decoration: const InputDecoration(
                                   labelText: 'Score',
                                   isDense: true,

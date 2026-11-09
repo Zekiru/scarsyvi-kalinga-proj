@@ -16,6 +16,7 @@ import 'models/student_model.dart';
 import 'providers/app_providers.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
+import 'widgets/connection_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +47,9 @@ void main() async {
     Hive.openBox<ClassroomModel>('classrooms_box'),
     Hive.openBox<LessonPlanModel>('lesson_plans_box'),
     Hive.openBox<AttendanceSessionModel>('attendance_box'),
+    // Changes made offline that haven't reached the server yet (stored as JSON
+    // strings, so no adapter is needed). Not cleared on logout.
+    Hive.openBox<String>('pending_ops_box'),
   ]);
 
   runApp(
@@ -62,6 +66,10 @@ class ProjectKalingaApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
 
+    // Starts listening for connectivity changes so queued offline changes
+    // upload automatically when the device is back online.
+    ref.watch(networkSyncManagerProvider);
+
     return MaterialApp(
       title: 'Project Kalinga',
       debugShowCheckedModeBanner: false,
@@ -69,6 +77,9 @@ class ProjectKalingaApp extends ConsumerWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
+      // Wraps the whole navigator, so the offline / pending-upload banner shows
+      // on every screen, including ones opened with Navigator.push.
+      builder: (context, child) => ConnectionBanner(child: child!),
       home: authState.when(
         data: (isAuthenticated) {
           if (isAuthenticated) {
@@ -82,7 +93,7 @@ class ProjectKalingaApp extends ConsumerWidget {
             child: CircularProgressIndicator(),
           ),
         ),
-        error: (_, __) => const LoginScreen(),
+        error: (_, _) => const LoginScreen(),
       ),
     );
   }

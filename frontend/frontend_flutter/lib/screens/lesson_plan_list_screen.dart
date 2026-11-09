@@ -47,12 +47,28 @@ class LessonPlanListScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _handleRefresh(WidgetRef ref) async {
+    // 1. Replay any pending offline operations to backend
+    await ref.read(networkSyncManagerProvider).syncPendingData();
+    // 2. Refetch lesson plans list
+    ref.invalidate(lessonPlansProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lessonPlansAsync = ref.watch(lessonPlansProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Curriculum & Lesson Plans')),
+      appBar: AppBar(
+        title: const Text('Curriculum & Lesson Plans'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh & Sync',
+            onPressed: () => _handleRefresh(ref),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: null,
         onPressed: () {
