@@ -49,7 +49,7 @@ class ApiV1RootView(APIView):
 api_v1_patterns = [
     path('', ApiV1RootView.as_view(), name='api-root'),
     path('accounts/', include('apps.accounts.urls')),
-    # path('curriculum/', include('apps.curriculum.urls')),
+    path('curriculum/', include('apps.curriculum.urls')),
     # path('classrooms/', include('apps.classrooms.urls')),
     # path('forums/', include('apps.forums.urls')),
 ]

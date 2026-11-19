@@ -1,91 +1,155 @@
-from rest_framework import viewsets, status
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
-from .models import LessonPlan, Material
+from apps.accounts.permissions import IsCheckerOrAdmin
+from .filters import LessonPlanFilter
+from .models import (
+    LessonGradeLevel,
+    LessonGradeMaterial,
+    LessonFlow,
+    LessonGrading,
+)
+from .pagination import LessonPlanPagination
+from .permissions import IsCurriculumEditorOrReadOnly
+from .selectors import (
+    get_grade_level_queryset,
+    get_material_queryset,
+    get_lesson_plan_queryset,
+)
 from .serializers import (
-    LessonPlanDetailSerializer, 
-    LessonPlanWriteSerializer, 
-    MaterialSerializer
+    GradeLevelSerializer,
+    MaterialSerializer,
+    LessonPlanListSerializer,
+    LessonPlanDetailSerializer,
+    LessonPlanWriteSerializer,
+    LessonPlanForkInputSerializer,
+    AssignCheckerInputSerializer,
+    LpCheckerSerializer,
+    LessonGradeLevelDetailSerializer,
+    LessonGradeLevelWriteSerializer,
+    LessonGradeMaterialSerializer,
+    LessonFlowSerializer,
+    LessonGradingSerializer,
+)
+from .services import (
+    create_lesson_plan,
+    fork_lesson_plan,
+    assign_lesson_plan_checker,
 )
 
 
+class GradeLevelViewSet(viewsets.ModelViewSet):
+    queryset = get_grade_level_queryset()
+    serializer_class = GradeLevelSerializer
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    search_fields = ['grade_level_name']
+
+
+class MaterialViewSet(viewsets.ModelViewSet):
+    queryset = get_material_queryset()
+    serializer_class = MaterialSerializer
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['file_type', 'is_offline_cached']
+    search_fields = ['file_name', 'description']
+    ordering_fields = ['file_name', 'file_size_kb', 'material_id']
+
+
 class LessonPlanViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for retrieving, creating, updating, searching, and filtering multi-grade lesson plans.
-    """
-    queryset = LessonPlan.objects.prefetch_related(
-        'lessongradelevel_set__flows',
-        'lessongradelevel_set__grading_tasks',
-        'lessongradelevel_set__lessongradematerial_set__material',
-        'lessongradelevel_set__gl'
-    ).all()
-
-    # Enable filter backends
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-
-    # Exact/Field-level filtering (e.g. ?learning_area=Math&primary_language=English&grade_levels__gl_id=1)
-    filterset_fields = {
-        'learning_area': ['exact', 'icontains'],
-        'primary_language': ['exact', 'icontains'],
-        'suggested_demographic': ['exact', 'icontains'],
-        'grade_levels__gl_id': ['exact'],
-        'grade_levels__grade_level_name': ['exact', 'icontains'],
-    }
-
-    # Free-text global search across multiple fields (e.g. ?search=fraction)
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    pagination_class = LessonPlanPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = LessonPlanFilter
     search_fields = [
         'lp_title',
         'learning_area',
         'primary_language',
         'suggested_demographic',
-        'learning_model_description',
-        'intentions_description',
-        'notes',
-        # Search inside nested grade-level objectives and competencies
-        'lessongradelevel__i_objectives',
         'lessongradelevel__i_competencies_codes',
-        'lessongradelevel__i_content_standard',
     ]
-
-    # Ordering options (e.g. ?ordering=-lp_id or ?ordering=lp_title)
     ordering_fields = ['lp_id', 'lp_title', 'learning_area', 'primary_language']
-    ordering = ['lp_id']
+    ordering = ['-lp_id']
+
+    def get_queryset(self):
+        return get_lesson_plan_queryset().distinct()
 
     def get_serializer_class(self):
-        """
-        Dynamically route serializers:
-        - Use LessonPlanWriteSerializer for POST (create), PUT (update), and PATCH (partial_update).
-        - Use LessonPlanDetailSerializer for GET (list, retrieve).
-        """
-        if self.action in ['create', 'update', 'partial_update']:
+        if self.action == 'list':
+            return LessonPlanListSerializer
+        if self.action in {'create', 'update', 'partial_update'}:
             return LessonPlanWriteSerializer
         return LessonPlanDetailSerializer
 
-    @action(detail=False, methods=['post'], url_path='bulk-sync')
-    def bulk_sync(self, request):
-        """
-        Endpoint for processing offline sync queues from Flutter devices.
-        Accepts batched updates/creations sent when connectivity resumes.
-        """
-        sync_payloads = request.data.get('transactions', [])
-        return Response({'status': 'synced', 'count': len(sync_payloads)}, status=status.HTTP_200_OK)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lp = create_lesson_plan(author=request.user, validated_data=serializer.validated_data)
+        output = LessonPlanDetailSerializer(lp, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='fork')
+    def fork(self, request, pk=None):
+        """Any authenticated user (e.g., Teacher or Author) can fork a lesson plan."""
+        original_lp = self.get_object()
+        serializer = LessonPlanForkInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        cloned_lp = fork_lesson_plan(
+            original_lp=original_lp,
+            new_author=request.user,
+            custom_title=serializer.validated_data.get('lp_title'),
+        )
+        output = LessonPlanDetailSerializer(cloned_lp, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsCheckerOrAdmin], url_path='assign-checker')
+    def assign_checker(self, request, pk=None):
+        lp = self.get_object()
+        serializer = AssignCheckerInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        link = assign_lesson_plan_checker(
+            lp=lp,
+            checker=serializer.validated_data['account_id'],
+            checker_role=serializer.validated_data['checker_role'],
+        )
+        return Response(LpCheckerSerializer(link).data, status=status.HTTP_200_OK)
 
 
-class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
-    """API endpoint to query downloadable teaching materials with search capabilities."""
-    queryset = Material.objects.all()
-    serializer_class = MaterialSerializer
+class LessonGradeLevelViewSet(viewsets.ModelViewSet):
+    queryset = LessonGradeLevel.objects.select_related('lp', 'gl').all()
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['lp', 'gl']
 
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    def get_serializer_class(self):
+        if self.action in {'create', 'update', 'partial_update'}:
+            return LessonGradeLevelWriteSerializer
+        return LessonGradeLevelDetailSerializer
 
-    # Field-level filtering (e.g. ?file_type=PDF&is_offline_cached=true)
-    filterset_fields = ['file_type', 'is_offline_cached']
 
-    # Free-text search (e.g. ?search=worksheet)
-    search_fields = ['file_name', 'description', 'file_type']
+class LessonGradeMaterialViewSet(viewsets.ModelViewSet):
+    queryset = LessonGradeMaterial.objects.select_related('lesson_grade_level', 'material').all()
+    serializer_class = LessonGradeMaterialSerializer
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['lesson_grade_level', 'material']
 
-    ordering_fields = ['material_id', 'file_name', 'file_size_kb']
-    ordering = ['file_name']
+
+class LessonFlowViewSet(viewsets.ModelViewSet):
+    queryset = LessonFlow.objects.select_related('lesson_grade_level').order_by('lf_id')
+    serializer_class = LessonFlowSerializer
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['lesson_grade_level', 'stage']
+
+
+class LessonGradingViewSet(viewsets.ModelViewSet):
+    queryset = LessonGrading.objects.select_related('lesson_grade_level').order_by('lg_id')
+    serializer_class = LessonGradingSerializer
+    permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['lesson_grade_level']
