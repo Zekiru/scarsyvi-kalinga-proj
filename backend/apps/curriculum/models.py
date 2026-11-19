@@ -48,6 +48,16 @@ class LessonPlan(models.Model):
     intentions_description = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
+    # NEW: Nullable self-referential FK indicating this plan was cloned/forked
+    forked_from = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='forks',
+        help_text="Reference to the original lesson plan if this plan was cloned/forked."
+    )
+
     # Relationships
     authors = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
