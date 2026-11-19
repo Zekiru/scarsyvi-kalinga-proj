@@ -51,7 +51,7 @@ api_v1_patterns = [
     path('accounts/', include('apps.accounts.urls')),
     path('curriculum/', include('apps.curriculum.urls')),
     path('classrooms/', include('apps.classrooms.urls')),
-    # path('forums/', include('apps.forums.urls')),
+    path('forums/', include('apps.forums.urls')),
 ]
 
 urlpatterns = [
