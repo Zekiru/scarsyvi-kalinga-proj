@@ -1,4 +1,5 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import '../sync/sync_operation.dart';
 
 class HiveBoxes {
   HiveBoxes._();
@@ -13,10 +14,17 @@ class HiveBoxes {
   static bool _initialized = false;
 
   /// Call once in `main()` before `runApp()`.
-  /// Register Phase 2 Hive TypeAdapters before calling `openAll()`.
   static Future<void> init() async {
     if (_initialized) return;
     await Hive.initFlutter();
+
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(SyncOpStatusAdapter());
+    }
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(SyncOperationAdapter());
+    }
+
     _initialized = true;
   }
 
@@ -27,6 +35,7 @@ class HiveBoxes {
       Hive.openBox<String>(classroomsCache),
       Hive.openBox<String>(forumsCache),
       Hive.openBox<String>(idMappings),
+      Hive.openBox<SyncOperation>(syncQueue),
     ]);
   }
 
@@ -35,6 +44,7 @@ class HiveBoxes {
   static Box<String> get classrooms => Hive.box<String>(classroomsCache);
   static Box<String> get forums => Hive.box<String>(forumsCache);
   static Box<String> get mappings => Hive.box<String>(idMappings);
+  static Box<SyncOperation> get queue => Hive.box<SyncOperation>(syncQueue);
 
   static Future<void> clearUserData() async {
     await Future.wait([
@@ -43,6 +53,7 @@ class HiveBoxes {
       classrooms.clear(),
       forums.clear(),
       mappings.clear(),
+      queue.clear(),
     ]);
   }
 }
