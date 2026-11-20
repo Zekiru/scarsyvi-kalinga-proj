@@ -1,100 +1,106 @@
-// import 'package:flutter/material.dart';
-// import 'package:flutter_riverpod/flutter_riverpod.dart';
-// import 'package:hive_flutter/hive_flutter.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// import 'models/attendance_model.dart';
-// import 'models/classroom_model.dart';
-// import 'models/lesson_flow_model.dart';
-// import 'models/lesson_grade_level_model.dart';
-// import 'models/lesson_grade_material_model.dart';
-// import 'models/lesson_grading_model.dart';
-// import 'models/lesson_plan_model.dart';
-// import 'models/material_model.dart';
-// import 'models/student_grade_model.dart';
-// import 'models/student_model.dart';
+import 'core/network/connectivity_provider.dart';
+import 'core/storage/hive_boxes.dart';
+import 'core/sync/sync_status_provider.dart';
+import 'features/accounts/presentation/login_screen.dart';
+import 'features/accounts/presentation/profile_screen.dart';
+import 'features/accounts/providers/auth_provider.dart';
 
-// import 'providers/app_providers.dart';
-// import 'screens/login_screen.dart';
-// import 'screens/main_navigation_screen.dart';
-// import 'widgets/connection_banner.dart';
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-// void main() async {
-//   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Hive (IndexedDB on Web, path_provider on Mobile/Desktop)
+  // and register Phase 2 sync adapters before opening boxes.
+  await HiveBoxes.init();
+  await HiveBoxes.openAll();
 
-//   // 1. Initialize Hive for Flutter
-//   await Hive.initFlutter();
+  runApp(
+    const ProviderScope(
+      child: KalingaApp(),
+    ),
+  );
+}
 
-//   // 2. Register all Hive Adapters
-//   Hive.registerAdapter(StudentAttendanceRecordAdapter());
-//   Hive.registerAdapter(AttendanceSessionModelAdapter());
-//   Hive.registerAdapter(GradeLevelModelAdapter());
-//   Hive.registerAdapter(LessonPlanSummaryModelAdapter());
-//   Hive.registerAdapter(ClassroomModelAdapter());
-//   Hive.registerAdapter(LessonFlowModelAdapter());
-//   Hive.registerAdapter(LessonGradeLevelModelAdapter());
-//   Hive.registerAdapter(LessonGradeMaterialModelAdapter());
-//   Hive.registerAdapter(LessonGradingModelAdapter());
-//   Hive.registerAdapter(LessonPlanModelAdapter());
-//   Hive.registerAdapter(MaterialModelAdapter());
-//   Hive.registerAdapter(StudentGradeItemAdapter());
-//   Hive.registerAdapter(StudentGradeBatchPayloadAdapter());
-//   Hive.registerAdapter(StudentGradeReadModelAdapter());
-//   Hive.registerAdapter(StudentSortByAdapter());
-//   Hive.registerAdapter(StudentModelAdapter());
+class KalingaApp extends ConsumerWidget {
+  const KalingaApp({super.key});
 
-//   // 3. Open primary Hive boxes
-//   await Future.wait([
-//     Hive.openBox<ClassroomModel>('classrooms_box'),
-//     Hive.openBox<LessonPlanModel>('lesson_plans_box'),
-//     Hive.openBox<AttendanceSessionModel>('attendance_box'),
-//     // Changes made offline that haven't reached the server yet (stored as JSON
-//     // strings, so no adapter is needed). Not cleared on logout.
-//     Hive.openBox<String>('pending_ops_box'),
-//   ]);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
 
-//   runApp(
-//     const ProviderScope(
-//       child: ProjectKalingaApp(),
-//     ),
-//   );
-// }
+    return MaterialApp(
+      title: 'Kalinga',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        useMaterial3: true,
+      ),
+      home: switch (authState.status) {
+        AuthStatus.initializing => const _SplashScreen(),
+        AuthStatus.unauthenticated => const LoginScreen(),
+        AuthStatus.authenticated => const _AuthenticatedShell(),
+      },
+    );
+  }
+}
 
-// class ProjectKalingaApp extends ConsumerWidget {
-//   const ProjectKalingaApp({super.key});
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
 
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-//     final authState = ref.watch(authProvider);
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading Kalinga...'),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-//     // Starts listening for connectivity changes so queued offline changes
-//     // upload automatically when the device is back online.
-//     ref.watch(networkSyncManagerProvider);
+/// Temporary shell for Phase 3 testing; will expand in Phase 7 with bottom/rail navigation
+/// for Curriculum, Classrooms, Forums, and Profile.
+class _AuthenticatedShell extends ConsumerWidget {
+  const _AuthenticatedShell();
 
-//     return MaterialApp(
-//       title: 'Project Kalinga',
-//       debugShowCheckedModeBanner: false,
-//       theme: ThemeData(
-//         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-//         useMaterial3: true,
-//       ),
-//       // Wraps the whole navigator, so the offline / pending-upload banner shows
-//       // on every screen, including ones opened with Navigator.push.
-//       builder: (context, child) => ConnectionBanner(child: child!),
-//       home: authState.when(
-//         data: (isAuthenticated) {
-//           if (isAuthenticated) {
-//             return const MainNavigationScreen();
-//           } else {
-//             return const LoginScreen();
-//           }
-//         },
-//         loading: () => const Scaffold(
-//           body: Center(
-//             child: CircularProgressIndicator(),
-//           ),
-//         ),
-//         error: (_, _) => const LoginScreen(),
-//       ),
-//     );
-//   }
-// }
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isOnline = ref.watch(isOnlineProvider);
+    final syncState = ref.watch(syncStatusProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Kalinga'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Chip(
+              avatar: Icon(
+                isOnline ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                size: 16,
+              ),
+              label: Text(
+                syncState.isSyncing
+                    ? 'Syncing...'
+                    : isOnline
+                        ? (syncState.hasPending
+                            ? 'Online (${syncState.pendingCount} queued)'
+                            : 'Online')
+                        : 'Offline (${syncState.pendingCount} queued)',
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: const ProfileScreen(),
+    );
+  }
+}
