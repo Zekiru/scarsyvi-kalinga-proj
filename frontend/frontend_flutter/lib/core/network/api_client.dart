@@ -8,6 +8,8 @@ import '../config/api_endpoints.dart';
 import '../storage/secure_token_storage.dart';
 import 'api_exception.dart';
 
+typedef JsonHeaders = Map<String, String>;
+
 final apiClientProvider = Provider<ApiClient>((ref) {
   final tokenStorage = ref.watch(secureTokenStorageProvider);
   return ApiClient(tokenStorage);
@@ -23,6 +25,11 @@ class ApiClient {
   final SecureTokenStorage _tokenStorage;
   final http.Client _client;
   final Duration timeout;
+  String? _cachedToken;
+
+  void clearCachedToken() {
+    _cachedToken = null;
+  }
 
   Uri _buildUri(String path, [Map<String, dynamic>? queryParams]) {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
@@ -44,14 +51,22 @@ class ApiClient {
     return uri.replace(queryParameters: merged);
   }
 
-  Future _buildHeaders({bool includeAuth = true}) async {
+  Future<JsonHeaders> _buildHeaders({bool includeAuth = true}) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
 
     if (includeAuth) {
-      final token = await _tokenStorage.getToken();
+      String? token = _cachedToken;
+      if (token == null || token.isEmpty) {
+        try {
+          token = await _tokenStorage
+              .getToken()
+              .timeout(const Duration(seconds: 2));
+          _cachedToken = token;
+        } catch (_) {}
+      }
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Token $token';
       }

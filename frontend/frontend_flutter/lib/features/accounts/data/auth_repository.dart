@@ -103,32 +103,47 @@ class AuthRepository {
 
   /// Restores session on app startup:
   /// 1. Returns `null` if no token is stored.
-  /// 2. Tries `/accounts/me/` online to refresh profile; if offline, falls back to cached Hive profile.
-  /// 3. Clears session if server returns `401 Unauthorized`.
+  /// 2. Immediately returns cached Hive profile if available and refreshes `/accounts/me/` in background.
+  /// 3. If no cached profile exists yet, fetches `/accounts/me/` with a 5-second timeout.
   Future<Account?> restoreSession() async {
     final token = await _tokenStorage.getToken();
     if (token == null || token.isEmpty) return null;
 
-    final cached = getCachedUser();
+    final cachedAccount = getCachedUser();
+    if (cachedAccount != null) {
+      Future.microtask(() async {
+        try {
+          final response = await _apiClient.get(ApiEndpoints.me);
+          if (response is Map<String, dynamic>) {
+            final fresh = Account.fromJson(response);
+            await _accountsBox.put(_currentUserKey, fresh.toJsonString());
+          }
+        } on ApiException catch (e) {
+          if (e.statusCode == 401) {
+            await logout();
+          }
+        } catch (_) {}
+      });
+      return cachedAccount;
+    }
 
     try {
-      final response = await _apiClient.get(ApiEndpoints.me);
+      final response = await _apiClient
+          .get(ApiEndpoints.me)
+          .timeout(const Duration(seconds: 5));
       if (response is Map<String, dynamic>) {
         final fresh = Account.fromJson(response);
         await _accountsBox.put(_currentUserKey, fresh.toJsonString());
         return fresh;
       }
-      return cached;
+      return null;
     } on ApiException catch (e) {
-      if (e.isUnauthorized) {
+      if (e.statusCode == 401) {
         await logout();
-        return null;
       }
-      if (e.isOffline && cached != null) {
-        return cached;
-      }
-      if (cached != null) return cached;
-      rethrow;
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 

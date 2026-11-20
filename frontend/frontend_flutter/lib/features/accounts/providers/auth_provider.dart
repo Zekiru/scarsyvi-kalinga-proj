@@ -60,7 +60,9 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> _bootstrap() async {
     final repo = ref.read(authRepositoryProvider);
     try {
-      final account = await repo.restoreSession();
+      final account = await repo
+          .restoreSession()
+          .timeout(const Duration(seconds: 2), onTimeout: () => repo.getCachedUser());
       if (account != null) {
         state = AuthState(
           status: AuthStatus.authenticated,
@@ -69,13 +71,16 @@ class AuthNotifier extends Notifier<AuthState> {
       } else {
         state = const AuthState(status: AuthStatus.unauthenticated);
       }
-    } on ApiException catch (e) {
-      state = AuthState(
-        status: AuthStatus.unauthenticated,
-        errorMessage: e.message,
-      );
     } catch (_) {
-      state = const AuthState(status: AuthStatus.unauthenticated);
+      final fallback = repo.getCachedUser();
+      if (fallback != null) {
+        state = AuthState(
+          status: AuthStatus.authenticated,
+          user: fallback,
+        );
+      } else {
+        state = const AuthState(status: AuthStatus.unauthenticated);
+      }
     }
   }
 

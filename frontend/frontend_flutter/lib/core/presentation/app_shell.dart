@@ -1,0 +1,131 @@
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../features/accounts/presentation/account_screen.dart';
+import '../../features/classrooms/presentation/classrooms_screen.dart';
+import '../../features/curriculum/presentation/lesson_plans_screen.dart';
+import '../../features/forums/presentation/forums_screen.dart';
+import '../network/connectivity_provider.dart';
+import 'sync_status_banner.dart';
+
+class AppShell extends ConsumerStatefulWidget {
+  const AppShell({super.key});
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  int _selectedIndex = 0;
+
+  static const _titles = [
+    'Curriculum',
+    'Classrooms',
+    'Community Forums',
+    'Account & Sync',
+  ];
+
+  static const _pages = <Widget>[
+    LessonPlansScreen(),
+    ClassroomsScreen(),
+    ForumsScreen(),
+    AccountScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
+    final isWide = MediaQuery.sizeOf(context).width >= 720;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_titles[_selectedIndex]),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Icon(
+              isOnline ? Icons.wifi_outlined : Icons.wifi_off_outlined,
+              size: 20,
+              color: isOnline
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const SyncStatusBanner(),
+          Expanded(
+            child: Row(
+              children: [
+                if (isWide)
+                  NavigationRail(
+                    selectedIndex: _selectedIndex,
+                    onDestinationSelected: (idx) =>
+                        setState(() => _selectedIndex = idx),
+                    labelType: NavigationRailLabelType.all,
+                    destinations: const [
+                      NavigationRailDestination(
+                        icon: Icon(Icons.menu_book_outlined),
+                        selectedIcon: Icon(Icons.menu_book),
+                        label: Text('Curriculum'),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.class_outlined),
+                        selectedIcon: Icon(Icons.class_),
+                        label: Text('Classrooms'),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.forum_outlined),
+                        selectedIcon: Icon(Icons.forum),
+                        label: Text('Forums'),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: Text('Account'),
+                      ),
+                    ],
+                  ),
+                if (isWide) const VerticalDivider(width: 1),
+                Expanded(
+                  child: _pages[_selectedIndex]
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: isWide
+          ? null
+          : NavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (idx) =>
+                  setState(() => _selectedIndex = idx),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.menu_book_outlined),
+                  selectedIcon: Icon(Icons.menu_book),
+                  label: 'Curriculum',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.class_outlined),
+                  selectedIcon: Icon(Icons.class_),
+                  label: 'Classrooms',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.forum_outlined),
+                  selectedIcon: Icon(Icons.forum),
+                  label: 'Forums',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Account',
+                ),
+              ],
+            ),
+    );
+  }
+}
