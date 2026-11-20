@@ -5,15 +5,10 @@ import '../../accounts/providers/auth_provider.dart';
 import '../data/curriculum_models.dart';
 import '../providers/curriculum_provider.dart';
 import 'lesson_plan_detail_screen.dart';
-import 'widgets/create_lesson_plan_dialog.dart';
 import 'widgets/lesson_plan_card.dart';
+import 'widgets/lesson_plan_form_dialog.dart';
 
-enum _LessonPlanGroupFilter {
-  all,
-  own,
-  contributed,
-  resourceCenter,
-}
+enum _LessonPlanGroupFilter { all, own, contributed, resourceCenter }
 
 class LessonPlansScreen extends ConsumerStatefulWidget {
   const LessonPlansScreen({super.key});
@@ -24,7 +19,7 @@ class LessonPlansScreen extends ConsumerStatefulWidget {
 
 class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
   final _searchCtrl = TextEditingController();
-  _LessonPlanGroupFilter _groupFilter = _LessonPlanGroupFilter.all;
+  _LessonPlanGroupFilter _selectedGroup = _LessonPlanGroupFilter.all;
 
   @override
   void dispose() {
@@ -33,7 +28,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
   }
 
   Future<void> _onCreatePressed() async {
-    final created = await showCreateLessonPlanDialog(context, ref);
+    final created = await showLessonPlanFormDialog(context, ref);
     if (created != null && mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -43,7 +38,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
     }
   }
 
-  void _openDetail(LessonPlan plan) {
+  void _openPlan(LessonPlan plan) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => LessonPlanDetailScreen(lessonPlanId: plan.id),
@@ -125,22 +120,18 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                   }
                 }
 
-                final showOwn = (_groupFilter == _LessonPlanGroupFilter.all ||
-                        _groupFilter == _LessonPlanGroupFilter.own) &&
-                    ownPlans.isNotEmpty;
+                final showOwn = _selectedGroup == _LessonPlanGroupFilter.all ||
+                    _selectedGroup == _LessonPlanGroupFilter.own;
                 final showContributed =
-                    (_groupFilter == _LessonPlanGroupFilter.all ||
-                            _groupFilter ==
-                                _LessonPlanGroupFilter.contributed) &&
-                        contributedPlans.isNotEmpty;
-                final showResourceCenter =
-                    (_groupFilter == _LessonPlanGroupFilter.all ||
-                            _groupFilter ==
-                                _LessonPlanGroupFilter.resourceCenter) &&
-                        resourceCenterPlans.isNotEmpty;
+                    _selectedGroup == _LessonPlanGroupFilter.all ||
+                        _selectedGroup == _LessonPlanGroupFilter.contributed;
+                final showResources =
+                    _selectedGroup == _LessonPlanGroupFilter.all ||
+                        _selectedGroup == _LessonPlanGroupFilter.resourceCenter;
 
-                final hasAnyVisible =
-                    showOwn || showContributed || showResourceCenter;
+                final hasVisibleItems = (showOwn && ownPlans.isNotEmpty) ||
+                    (showContributed && contributedPlans.isNotEmpty) ||
+                    (showResources && resourceCenterPlans.isNotEmpty);
 
                 return Column(
                   children: [
@@ -155,41 +146,50 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                           FilterChip(
                             label: Text('All (${plans.length})'),
                             selected:
-                                _groupFilter == _LessonPlanGroupFilter.all,
+                                _selectedGroup == _LessonPlanGroupFilter.all,
                             onSelected: (_) => setState(
-                              () => _groupFilter = _LessonPlanGroupFilter.all,
+                              () => _selectedGroup = _LessonPlanGroupFilter.all,
                             ),
                           ),
                           const SizedBox(width: 8),
                           FilterChip(
+                            avatar: const Icon(Icons.person_outline, size: 16),
                             label: Text('My Plans (${ownPlans.length})'),
                             selected:
-                                _groupFilter == _LessonPlanGroupFilter.own,
+                                _selectedGroup == _LessonPlanGroupFilter.own,
                             onSelected: (_) => setState(
-                              () => _groupFilter = _LessonPlanGroupFilter.own,
+                              () => _selectedGroup = _LessonPlanGroupFilter.own,
                             ),
                           ),
                           const SizedBox(width: 8),
                           FilterChip(
+                            avatar: const Icon(
+                              Icons.group_work_outlined,
+                              size: 16,
+                            ),
                             label: Text(
                               'Contributed (${contributedPlans.length})',
                             ),
-                            selected: _groupFilter ==
+                            selected: _selectedGroup ==
                                 _LessonPlanGroupFilter.contributed,
                             onSelected: (_) => setState(
-                              () => _groupFilter =
+                              () => _selectedGroup =
                                   _LessonPlanGroupFilter.contributed,
                             ),
                           ),
                           const SizedBox(width: 8),
                           FilterChip(
+                            avatar: const Icon(
+                              Icons.public_outlined,
+                              size: 16,
+                            ),
                             label: Text(
                               'Resource Center (${resourceCenterPlans.length})',
                             ),
-                            selected: _groupFilter ==
+                            selected: _selectedGroup ==
                                 _LessonPlanGroupFilter.resourceCenter,
                             onSelected: (_) => setState(
-                              () => _groupFilter =
+                              () => _selectedGroup =
                                   _LessonPlanGroupFilter.resourceCenter,
                             ),
                           ),
@@ -200,7 +200,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                       child: RefreshIndicator(
                         onRefresh: () =>
                             ref.read(lessonPlansProvider.notifier).refresh(),
-                        child: !hasAnyVisible
+                        child: !hasVisibleItems
                             ? ListView(
                                 padding: const EdgeInsets.all(32),
                                 children: const [
@@ -215,36 +215,35 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                                 padding:
                                     const EdgeInsets.fromLTRB(16, 8, 16, 88),
                                 children: [
-                                  if (showOwn) ...[
-                                    _GroupSectionHeader(
+                                  if (showOwn && ownPlans.isNotEmpty) ...[
+                                    _GroupHeader(
                                       icon: Icons.person_outline,
                                       title: 'My Lesson Plans',
                                       subtitle:
-                                          'Created by you or saved as local drafts',
+                                          'Created by you & local offline drafts',
                                       count: ownPlans.length,
                                     ),
-                                    const SizedBox(height: 8),
                                     ...ownPlans.map(
                                       (plan) => Padding(
                                         padding:
                                             const EdgeInsets.only(bottom: 10),
                                         child: LessonPlanCard(
                                           plan: plan,
-                                          onTap: () => _openDetail(plan),
+                                          onTap: () => _openPlan(plan),
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 8),
                                   ],
-                                  if (showContributed) ...[
-                                    _GroupSectionHeader(
+                                  if (showContributed &&
+                                      contributedPlans.isNotEmpty) ...[
+                                    _GroupHeader(
                                       icon: Icons.group_work_outlined,
                                       title: 'Contributed Plans',
                                       subtitle:
-                                          'Plans where you are a checker or co-author',
+                                          'Assigned as checker or co-author',
                                       count: contributedPlans.length,
                                     ),
-                                    const SizedBox(height: 8),
                                     ...contributedPlans.map(
                                       (plan) => Padding(
                                         padding:
@@ -253,28 +252,28 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                                           plan: plan,
                                           roleBadge:
                                               plan.contributionRoleFor(userId),
-                                          onTap: () => _openDetail(plan),
+                                          onTap: () => _openPlan(plan),
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 8),
                                   ],
-                                  if (showResourceCenter) ...[
-                                    _GroupSectionHeader(
-                                      icon: Icons.public,
+                                  if (showResources &&
+                                      resourceCenterPlans.isNotEmpty) ...[
+                                    _GroupHeader(
+                                      icon: Icons.public_outlined,
                                       title: 'Resource Center',
                                       subtitle:
-                                          'Shared lesson plans created by other educators',
+                                          'Shared plans created by other educators',
                                       count: resourceCenterPlans.length,
                                     ),
-                                    const SizedBox(height: 8),
                                     ...resourceCenterPlans.map(
                                       (plan) => Padding(
                                         padding:
                                             const EdgeInsets.only(bottom: 10),
                                         child: LessonPlanCard(
                                           plan: plan,
-                                          onTap: () => _openDetail(plan),
+                                          onTap: () => _openPlan(plan),
                                         ),
                                       ),
                                     ),
@@ -299,8 +298,8 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
   }
 }
 
-class _GroupSectionHeader extends StatelessWidget {
-  const _GroupSectionHeader({
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -317,24 +316,26 @@ class _GroupSectionHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.outlineVariant),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: colors.primary),
-          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: colors.onSecondaryContainer),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: theme.textTheme.titleSmall?.copyWith(
+                  style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -347,17 +348,10 @@ class _GroupSectionHeader extends StatelessWidget {
               ],
             ),
           ),
-          CircleAvatar(
-            radius: 13,
-            backgroundColor: colors.primaryContainer,
-            foregroundColor: colors.onPrimaryContainer,
-            child: Text(
-              '$count',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          Badge(
+            label: Text('$count'),
+            backgroundColor: colors.primary,
+            textColor: colors.onPrimary,
           ),
         ],
       ),

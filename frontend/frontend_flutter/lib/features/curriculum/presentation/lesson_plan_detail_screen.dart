@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
+import '../data/curriculum_models.dart';
 import '../data/curriculum_repository.dart';
 import '../providers/curriculum_provider.dart';
 import 'widgets/grade_levels_tab.dart';
 import 'widgets/lesson_flows_tab.dart';
 import 'widgets/lesson_gradings_tab.dart';
+import 'widgets/lesson_plan_form_dialog.dart';
 import 'widgets/materials_tab.dart';
 import 'widgets/overview_tab.dart';
 
@@ -18,6 +20,46 @@ class LessonPlanDetailScreen extends ConsumerWidget {
   });
 
   final String lessonPlanId;
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    LessonPlan plan,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Lesson Plan?'),
+        content: Text(
+          'Are you sure you want to delete "${plan.title}"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    await ref.read(lessonPlansProvider.notifier).deleteLessonPlan(plan.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted "${plan.title}"')),
+      );
+      Navigator.of(context).pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,8 +76,12 @@ class LessonPlanDetailScreen extends ConsumerWidget {
         body: Center(child: Text('Error loading lesson plan: $err')),
       ),
       data: (plan) {
+        final isOwner = plan.isCreatedBy(currentUser?.id);
+        final isAdmin = currentUser?.canAdminister ?? false;
+        final canDelete = isOwner || isAdmin;
         final canEdit = plan.isOwnedBy(currentUser?.id) ||
-            (currentUser?.canAdminister ?? false);
+            plan.isContributedBy(currentUser?.id) ||
+            isAdmin;
         final canReview = currentUser?.canModerate ?? false;
 
         return DefaultTabController(
@@ -44,6 +90,16 @@ class LessonPlanDetailScreen extends ConsumerWidget {
             appBar: AppBar(
               title: Text(plan.title),
               actions: [
+                if (canEdit)
+                  IconButton(
+                    tooltip: 'Edit Lesson Plan',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => showLessonPlanFormDialog(
+                      context,
+                      ref,
+                      existingPlan: plan,
+                    ),
+                  ),
                 if (!plan.isLocalDraft)
                   IconButton(
                     tooltip: 'Fork Lesson Plan',
@@ -87,6 +143,15 @@ class LessonPlanDetailScreen extends ConsumerWidget {
                       ref.invalidate(lessonPlanDetailProvider(lessonPlanId));
                       ref.read(lessonPlansProvider.notifier).refresh();
                     },
+                  ),
+                if (canDelete)
+                  IconButton(
+                    tooltip: 'Delete Lesson Plan',
+                    icon: Icon(
+                      Icons.delete_outline,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    onPressed: () => _confirmDelete(context, ref, plan),
                   ),
               ],
               bottom: const TabBar(

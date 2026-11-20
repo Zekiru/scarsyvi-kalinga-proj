@@ -48,7 +48,6 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     required String suggestedDemographic,
     String multigradeModel = '',
     String sharedSubTheme = '',
-    String learnerContext = '',
     bool isPublic = true,
   }) async {
     final user = ref.read(currentUserProvider);
@@ -61,7 +60,6 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
       suggestedDemographic: suggestedDemographic,
       multigradeModel: multigradeModel,
       sharedSubTheme: sharedSubTheme,
-      learnerContext: learnerContext,
       isPublic: isPublic,
       authorId: user?.id,
       authorName: user?.username ?? '',
@@ -71,6 +69,56 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     final current = state.value ?? const [];
     state = AsyncData([created, ...current]);
     return created;
+  }
+
+  Future<LessonPlan> updateLessonPlan({
+    required String lessonPlanId,
+    required String title,
+    required String subject,
+    required String primaryLanguage,
+    required String suggestedDemographic,
+    String multigradeModel = '',
+    String sharedSubTheme = '',
+    String learnerContext = '',
+    String reflectionQuestions = '',
+    String notesForNextSession = '',
+    bool isPublic = true,
+  }) async {
+    final repo = ref.read(curriculumRepositoryProvider);
+    final updated = await repo.updateLessonPlan(
+      lessonPlanId: lessonPlanId,
+      title: title,
+      subject: subject,
+      primaryLanguage: primaryLanguage,
+      suggestedDemographic: suggestedDemographic,
+      multigradeModel: multigradeModel,
+      sharedSubTheme: sharedSubTheme,
+      learnerContext: learnerContext,
+      reflectionQuestions: reflectionQuestions,
+      notesForNextSession: notesForNextSession,
+      isPublic: isPublic,
+    );
+
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(lessonPlanId));
+
+    final current = state.value ?? const [];
+    state = AsyncData([
+      for (final item in current)
+        if (item.id == lessonPlanId) updated else item,
+    ]);
+    return updated;
+  }
+
+  Future<void> deleteLessonPlan(String lessonPlanId) async {
+    final repo = ref.read(curriculumRepositoryProvider);
+    await repo.deleteLessonPlan(lessonPlanId);
+
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(lessonPlanId));
+
+    final current = state.value ?? const [];
+    state = AsyncData(current.where((p) => p.id != lessonPlanId).toList());
   }
 
   Future<LessonPlan> forkLessonPlan(int serverId) async {

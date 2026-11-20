@@ -40,43 +40,28 @@ class CurriculumRepository {
     return const [];
   }
 
-  /// Fetches all pages from a DRF list endpoint so child items on page 2+ are never dropped.
   Future<List<dynamic>> _fetchAllItems(
     String endpoint, {
-    Map<String, String>? queryParams,
+    Map<String, dynamic>? queryParams,
   }) async {
-    final all = <dynamic>[];
-    String? nextEndpoint = endpoint;
-    Map<String, String>? params = queryParams;
-    int guard = 0;
+    final items = <dynamic>[];
+    String? nextUrl = endpoint;
+    Map<String, dynamic>? currentParams = queryParams;
 
-    while (nextEndpoint != null && guard < 20) {
-      guard++;
-      final response = await _apiClient.get(nextEndpoint, queryParams: params);
-      all.addAll(_extractList(response));
+    while (nextUrl != null && nextUrl.isNotEmpty) {
+      final response = await _apiClient.get(nextUrl, queryParams: currentParams);
+      items.addAll(_extractList(response));
 
       if (response is Map<String, dynamic> && response['next'] is String) {
         final rawNext = response['next'] as String;
-        if (rawNext.isEmpty) {
-          nextEndpoint = null;
-        } else {
-          final uri = Uri.tryParse(rawNext);
-          if (uri != null) {
-            var path = uri.path;
-            if (path.startsWith('/api/v1')) {
-              path = path.substring('/api/v1'.length);
-            }
-            nextEndpoint = path;
-            params = uri.queryParameters.isEmpty ? null : uri.queryParameters;
-          } else {
-            nextEndpoint = null;
-          }
-        }
+        final apiIdx = rawNext.indexOf('/api/v1/');
+        nextUrl = apiIdx >= 0 ? rawNext.substring(apiIdx + 7) : rawNext;
+        currentParams = null;
       } else {
-        nextEndpoint = null;
+        nextUrl = null;
       }
     }
-    return all;
+    return items;
   }
 
   List<GradeLevel> getCachedGradeLevels() => _cache.getGradeLevels();
@@ -84,8 +69,8 @@ class CurriculumRepository {
 
   Future<List<GradeLevel>> fetchGradeLevels() async {
     try {
-      final items = await _fetchAllItems(ApiEndpoints.gradeLevels);
-      final levels = parseModelList(items, GradeLevel.fromJson);
+      final raw = await _fetchAllItems(ApiEndpoints.gradeLevels);
+      final levels = parseModelList(raw, GradeLevel.fromJson);
       await _cache.saveGradeLevels(levels);
       return levels;
     } on ApiException catch (e) {
@@ -97,14 +82,14 @@ class CurriculumRepository {
 
   Future<List<LessonPlan>> fetchLessonPlans({String? search}) async {
     try {
-      final items = await _fetchAllItems(
+      final raw = await _fetchAllItems(
         ApiEndpoints.lessonPlans,
         queryParams: {
           if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         },
       );
 
-      final serverPlans = parseModelList(items, LessonPlan.fromJson);
+      final serverPlans = parseModelList(raw, LessonPlan.fromJson);
       final unsyncedLocal =
           _cache.getLessonPlans().where((p) => p.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverPlans];
@@ -131,8 +116,6 @@ class CurriculumRepository {
           await _apiClient.get(ApiEndpoints.lessonPlanDetail(serverId));
       var plan = LessonPlan.fromJson(response as Map<String, dynamic>);
 
-      // LessonPlan.gradeLevels from the base serializer may only contain summary
-      // grade objects (gl_id + grade_level_name) without LessonGradeLevel IDs or standards.
       final needsGradeLevelsHydration = plan.gradeLevels.isEmpty ||
           plan.gradeLevels.any((g) => g.id.isEmpty) ||
           !plan.gradeLevels.any((g) => g.hasDetailedStandards);
@@ -144,7 +127,7 @@ class CurriculumRepository {
         plan = await _hydrateChildrenFromEndpoints(
           serverId,
           plan,
-          needsGradeLevelsHydration: needsGradeLevelsHydration,
+          fetchGradeLevels: needsGradeLevelsHydration,
         );
       }
 
@@ -183,46 +166,58 @@ class CurriculumRepository {
   Future<LessonPlan> _hydrateChildrenFromEndpoints(
     int serverId,
     LessonPlan plan, {
-    required bool needsGradeLevelsHydration,
+    required bool fetchGradeLevels,
   }) async {
     final planIdStr = serverId.toString();
 
-    // 1. Resolve full LessonGradeLevel records first so we have their real primary keys (`id`)
-    // and standards (`i_content_standard`, `i_performance_standard`, etc.).
-    var gradeLevels = plan.gradeLevels;
-    if (needsGradeLevelsHydration) {
-      final rawLgls = await _fetchAllItems(ApiEndpoints.lessonGradeLevels)
-          .catchError((_) => const <dynamic>[]);
-      final parsedLgls = parseModelList(rawLgls, LessonGradeLevel.fromJson)
-          .where((e) => e.lessonPlanId == planIdStr)
+    var resolvedGradeLevels = plan.gradeLevels;
+    if (fetchGradeLevels) {
+      final rawLgl = await _fetchAllItems(
+        ApiEndpoints.lessonGradeLevels,
+        queryParams: {'lp': serverId},
+      ).catchError((_) => <dynamic>[]);
+
+      final fetchedLgl = parseModelList(rawLgl, LessonGradeLevel.fromJson)
+          .where((e) => e.lessonPlanId.isEmpty || e.lessonPlanId == planIdStr)
           .toList();
 
-      if (parsedLgls.isNotEmpty) {
-        // Fill in any missing gradeLevelName from the summary list on `plan.gradeLevels`
-        final nameByGlId = <int, String>{
-          for (final g in plan.gradeLevels)
-            if (g.gradeLevelName.isNotEmpty) g.gradeLevelId: g.gradeLevelName,
-        };
-        gradeLevels = parsedLgls.map((lgl) {
-          if (lgl.gradeLevelName.isEmpty &&
-              nameByGlId.containsKey(lgl.gradeLevelId)) {
-            return lgl.copyWith(gradeLevelName: nameByGlId[lgl.gradeLevelId]!);
-          }
-          return lgl;
-        }).toList();
+      if (fetchedLgl.isNotEmpty) {
+        resolvedGradeLevels = fetchedLgl;
       }
     }
 
-    final lglMap = <String, String>{
-      for (final gl in gradeLevels)
-        if (gl.id.isNotEmpty)
-          gl.id: gl.gradeLevelName.isNotEmpty
-              ? gl.gradeLevelName
-              : 'Grade ${gl.gradeLevelId}',
+    final validLglIds = resolvedGradeLevels
+        .map((g) => g.id)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final lglNameMap = {
+      for (final g in resolvedGradeLevels)
+        if (g.id.isNotEmpty && g.gradeLevelName.isNotEmpty) g.id: g.gradeLevelName,
     };
-    final validLglIds = lglMap.keys.toSet();
 
-    bool belongsToPlan(String? lglId, String lpId) {
+    final nestedFlows = resolvedGradeLevels.expand((g) => g.flows).toList();
+    final nestedGradings =
+        resolvedGradeLevels.expand((g) => g.gradingTasks).toList();
+    final nestedMaterials =
+        resolvedGradeLevels.expand((g) => g.materials).toList();
+
+    final results = await Future.wait<List<dynamic>>([
+      if (plan.flows.isEmpty && nestedFlows.isEmpty)
+        _fetchAllItems(ApiEndpoints.lessonFlows).catchError((_) => <dynamic>[])
+      else
+        Future.value(const <dynamic>[]),
+      if (plan.gradings.isEmpty && nestedGradings.isEmpty)
+        _fetchAllItems(ApiEndpoints.lessonGradings)
+            .catchError((_) => <dynamic>[])
+      else
+        Future.value(const <dynamic>[]),
+      if (plan.materials.isEmpty && nestedMaterials.isEmpty)
+        _fetchAllItems(ApiEndpoints.materials).catchError((_) => <dynamic>[])
+      else
+        Future.value(const <dynamic>[]),
+    ]);
+
+    bool belongsToPlan(String lpId, String? lglId) {
       if (lglId != null && lglId.isNotEmpty && validLglIds.contains(lglId)) {
         return true;
       }
@@ -230,94 +225,68 @@ class CurriculumRepository {
       return false;
     }
 
-    // 2. Fetch flows, gradings, and materials concurrently if empty on the base response
-    final results = await Future.wait<List<dynamic>>([
-      if (plan.flows.isEmpty)
-        _fetchAllItems(ApiEndpoints.lessonFlows)
-            .catchError((_) => const <dynamic>[])
-      else
-        Future.value(const <dynamic>[]),
-      if (plan.gradings.isEmpty)
-        _fetchAllItems(ApiEndpoints.lessonGradings)
-            .catchError((_) => const <dynamic>[])
-      else
-        Future.value(const <dynamic>[]),
-      if (plan.materials.isEmpty)
-        _fetchAllItems(ApiEndpoints.materials)
-            .catchError((_) => const <dynamic>[])
-      else
-        Future.value(const <dynamic>[]),
-    ]);
-
-    var flows = plan.flows.isNotEmpty
+    final resolvedFlows = plan.flows.isNotEmpty
         ? plan.flows
-        : gradeLevels.expand((gl) => gl.flows).toList();
-    if (flows.isEmpty && results[0].isNotEmpty) {
-      flows = parseModelList(results[0], LessonFlow.fromJson)
-          .where((f) => belongsToPlan(f.lessonGradeLevelId, f.lessonPlanId))
-          .toList();
-    }
-    flows = flows
-        .map((f) => (f.gradeLevelName.isEmpty &&
-                f.lessonGradeLevelId != null &&
-                lglMap.containsKey(f.lessonGradeLevelId))
-            ? f.copyWith(gradeLevelName: lglMap[f.lessonGradeLevelId]!)
-            : f)
-        .toList();
+        : nestedFlows.isNotEmpty
+            ? nestedFlows
+            : parseModelList(results[0], LessonFlow.fromJson)
+                .where((e) => belongsToPlan(e.lessonPlanId, e.lessonGradeLevelId))
+                .map((e) => e.gradeLevelName.isEmpty &&
+                        lglNameMap.containsKey(e.lessonGradeLevelId)
+                    ? e.copyWith(gradeLevelName: lglNameMap[e.lessonGradeLevelId])
+                    : e)
+                .toList();
 
-    var gradings = plan.gradings.isNotEmpty
+    final resolvedGradings = plan.gradings.isNotEmpty
         ? plan.gradings
-        : gradeLevels.expand((gl) => gl.gradingTasks).toList();
-    if (gradings.isEmpty && results[1].isNotEmpty) {
-      gradings = parseModelList(results[1], LessonGrading.fromJson)
-          .where((g) => belongsToPlan(g.lessonGradeLevelId, g.lessonPlanId))
-          .toList();
-    }
-    gradings = gradings
-        .map((g) => (g.gradeLevelName.isEmpty &&
-                g.lessonGradeLevelId != null &&
-                lglMap.containsKey(g.lessonGradeLevelId))
-            ? g.copyWith(gradeLevelName: lglMap[g.lessonGradeLevelId]!)
-            : g)
-        .toList();
+        : nestedGradings.isNotEmpty
+            ? nestedGradings
+            : parseModelList(results[1], LessonGrading.fromJson)
+                .where((e) => belongsToPlan(e.lessonPlanId, e.lessonGradeLevelId))
+                .map((e) => e.gradeLevelName.isEmpty &&
+                        lglNameMap.containsKey(e.lessonGradeLevelId)
+                    ? e.copyWith(gradeLevelName: lglNameMap[e.lessonGradeLevelId])
+                    : e)
+                .toList();
 
-    var materials = plan.materials.isNotEmpty
+    final resolvedMaterials = plan.materials.isNotEmpty
         ? plan.materials
-        : gradeLevels.expand((gl) => gl.materials).toList();
-    if (materials.isEmpty && results[2].isNotEmpty) {
-      materials = parseModelList(results[2], LessonMaterial.fromJson)
-          .where((m) => belongsToPlan(m.lessonGradeLevelId, m.lessonPlanId))
-          .toList();
-    }
-    materials = materials
-        .map((m) => (m.gradeLevelName.isEmpty &&
-                m.lessonGradeLevelId != null &&
-                lglMap.containsKey(m.lessonGradeLevelId))
-            ? m.copyWith(gradeLevelName: lglMap[m.lessonGradeLevelId]!)
-            : m)
-        .toList();
+        : nestedMaterials.isNotEmpty
+            ? nestedMaterials
+            : parseModelList(results[2], LessonMaterial.fromJson)
+                .where((e) => belongsToPlan(e.lessonPlanId, e.lessonGradeLevelId))
+                .map((e) => e.gradeLevelName.isEmpty &&
+                        lglNameMap.containsKey(e.lessonGradeLevelId)
+                    ? e.copyWith(gradeLevelName: lglNameMap[e.lessonGradeLevelId])
+                    : e)
+                .toList();
 
-    // Attach hydrated flows/gradings/materials onto their corresponding LessonGradeLevel cards
-    final hydratedGradeLevels = gradeLevels.map((gl) {
-      if (gl.id.isEmpty) return gl;
-      final glFlows = flows.where((f) => f.lessonGradeLevelId == gl.id).toList();
-      final glGradings =
-          gradings.where((g) => g.lessonGradeLevelId == gl.id).toList();
-      final glMaterials =
-          materials.where((m) => m.lessonGradeLevelId == gl.id).toList();
+    final enrichedGradeLevels = resolvedGradeLevels.map((gl) {
+      final glFlows = gl.flows.isNotEmpty
+          ? gl.flows
+          : resolvedFlows.where((f) => f.lessonGradeLevelId == gl.id).toList();
+      final glGradings = gl.gradingTasks.isNotEmpty
+          ? gl.gradingTasks
+          : resolvedGradings
+              .where((g) => g.lessonGradeLevelId == gl.id)
+              .toList();
+      final glMaterials = gl.materials.isNotEmpty
+          ? gl.materials
+          : resolvedMaterials
+              .where((m) => m.lessonGradeLevelId == gl.id)
+              .toList();
       return gl.copyWith(
-        flows: gl.flows.isNotEmpty ? gl.flows : glFlows,
-        gradingTasks:
-            gl.gradingTasks.isNotEmpty ? gl.gradingTasks : glGradings,
-        materials: gl.materials.isNotEmpty ? gl.materials : glMaterials,
+        flows: glFlows,
+        gradingTasks: glGradings,
+        materials: glMaterials,
       );
     }).toList();
 
     return plan.copyWith(
-      gradeLevels: hydratedGradeLevels,
-      flows: flows,
-      gradings: gradings,
-      materials: materials,
+      gradeLevels: enrichedGradeLevels,
+      flows: resolvedFlows,
+      gradings: resolvedGradings,
+      materials: resolvedMaterials,
     );
   }
 
@@ -328,7 +297,6 @@ class CurriculumRepository {
     required String suggestedDemographic,
     String multigradeModel = '',
     String sharedSubTheme = '',
-    String learnerContext = '',
     bool isPublic = true,
     int? authorId,
     String authorName = '',
@@ -342,8 +310,6 @@ class CurriculumRepository {
         'multigrade_model': multigradeModel.trim(),
       if (sharedSubTheme.trim().isNotEmpty)
         'shared_sub_theme': sharedSubTheme.trim(),
-      if (learnerContext.trim().isNotEmpty)
-        'learner_context': learnerContext.trim(),
       'is_public': isPublic,
     };
 
@@ -365,7 +331,6 @@ class CurriculumRepository {
         suggestedDemographic: suggestedDemographic.trim(),
         multigradeModel: multigradeModel.trim(),
         sharedSubTheme: sharedSubTheme.trim(),
-        learnerContext: learnerContext.trim(),
         description: suggestedDemographic.trim(),
         authorId: authorId,
         authorName: authorName,
@@ -387,6 +352,121 @@ class CurriculumRepository {
     }
   }
 
+  Future<LessonPlan> updateLessonPlan({
+    required String lessonPlanId,
+    required String title,
+    required String subject,
+    required String primaryLanguage,
+    required String suggestedDemographic,
+    String multigradeModel = '',
+    String sharedSubTheme = '',
+    String learnerContext = '',
+    String reflectionQuestions = '',
+    String notesForNextSession = '',
+    bool isPublic = true,
+  }) async {
+    final payload = <String, dynamic>{
+      'lp_title': title.trim(),
+      'learning_area': subject.trim(),
+      'primary_language': primaryLanguage.trim(),
+      'suggested_demographic': suggestedDemographic.trim(),
+      'is_public': isPublic,
+      if (multigradeModel.trim().isNotEmpty)
+        'multigrade_model': multigradeModel.trim(),
+      if (sharedSubTheme.trim().isNotEmpty)
+        'shared_sub_theme': sharedSubTheme.trim(),
+      if (learnerContext.trim().isNotEmpty)
+        'learner_context': learnerContext.trim(),
+      if (reflectionQuestions.trim().isNotEmpty)
+        'reflection_questions': reflectionQuestions.trim(),
+      if (notesForNextSession.trim().isNotEmpty)
+        'notes_for_next_session': notesForNextSession.trim(),
+    };
+
+    final isTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-plans/$lessonPlanId/';
+
+    try {
+      if (isTemp) {
+        throw ApiException(message: 'Plan is local draft', isOffline: true);
+      }
+      final response = await _apiClient.patch(endpoint, body: payload);
+      final updated = LessonPlan.fromJson(response as Map<String, dynamic>);
+
+      final existing = _cache.getLessonPlanDetail(lessonPlanId);
+      final merged = existing == null
+          ? updated
+          : updated.copyWith(
+              gradeLevels: updated.gradeLevels.isNotEmpty
+                  ? updated.gradeLevels
+                  : existing.gradeLevels,
+              flows: updated.flows.isNotEmpty ? updated.flows : existing.flows,
+              gradings: updated.gradings.isNotEmpty
+                  ? updated.gradings
+                  : existing.gradings,
+              materials: updated.materials.isNotEmpty
+                  ? updated.materials
+                  : existing.materials,
+            );
+
+      await _cache.saveDetail(merged);
+      return merged;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_plan_update',
+        method: 'PATCH',
+        endpoint: endpoint,
+        payload: payload,
+        dependsOnTempIds: isTemp ? [lessonPlanId] : const [],
+      );
+
+      final existing = _cache.getLessonPlanDetail(lessonPlanId);
+      if (existing != null) {
+        final optimistic = existing.copyWith(
+          title: title.trim(),
+          subject: subject.trim(),
+          primaryLanguage: primaryLanguage.trim(),
+          suggestedDemographic: suggestedDemographic.trim(),
+          multigradeModel: multigradeModel.trim(),
+          sharedSubTheme: sharedSubTheme.trim(),
+          learnerContext: learnerContext.trim(),
+          reflectionQuestions: reflectionQuestions.trim(),
+          notesForNextSession: notesForNextSession.trim(),
+          isPublic: isPublic,
+          isPendingSync: true,
+        );
+        await _cache.saveDetail(optimistic);
+        return optimistic;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> deleteLessonPlan(String lessonPlanId) async {
+    final isTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-plans/$lessonPlanId/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _cache.removeLessonPlan(lessonPlanId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_plan_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [lessonPlanId] : const [],
+      );
+      await _cache.removeLessonPlan(lessonPlanId);
+    }
+  }
+
   Future<LessonGradeLevel> addLessonGradeLevel({
     required String lessonPlanId,
     required int gradeLevelId,
@@ -401,23 +481,29 @@ class CurriculumRepository {
     String enrichment = '',
   }) async {
     final isParentTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
+    final lpVal = isParentTemp ? lessonPlanId : int.parse(lessonPlanId);
+
     final payload = <String, dynamic>{
-      'lp': isParentTemp ? lessonPlanId : int.parse(lessonPlanId),
+      'lp': lpVal,
       'gl': gradeLevelId,
-      'i_content_standard': contentStandard.trim(),
-      'i_performance_standard': performanceStandard.trim(),
-      'i_competencies_codes': learningCompetencies.trim(),
-      'i_objectives': specificObjectives.trim(),
-      'l_context': learnerContext.trim(),
-      'w_reflection_questions': reflectionQuestions.trim(),
-      're_remediation': remediation.trim(),
-      're_enrichment': enrichment.trim(),
+      if (contentStandard.trim().isNotEmpty)
+        'i_content_standard': contentStandard.trim(),
+      if (performanceStandard.trim().isNotEmpty)
+        'i_performance_standard': performanceStandard.trim(),
+      if (learningCompetencies.trim().isNotEmpty)
+        'i_competencies_codes': learningCompetencies.trim(),
+      if (specificObjectives.trim().isNotEmpty)
+        'i_objectives': specificObjectives.trim(),
+      if (learnerContext.trim().isNotEmpty) 'l_context': learnerContext.trim(),
+      if (reflectionQuestions.trim().isNotEmpty)
+        'w_reflection_questions': reflectionQuestions.trim(),
+      if (remediation.trim().isNotEmpty) 're_remediation': remediation.trim(),
+      if (enrichment.trim().isNotEmpty) 're_enrichment': enrichment.trim(),
     };
 
     try {
       if (isParentTemp) {
-        throw ApiException(
-            message: 'Parent plan is offline draft', isOffline: true);
+        throw ApiException(message: 'Parent plan is offline draft', isOffline: true);
       }
       final response =
           await _apiClient.post(ApiEndpoints.lessonGradeLevels, body: payload);
@@ -469,11 +555,11 @@ class CurriculumRepository {
     int timeMinutes = 10,
   }) async {
     final deps = _collectDependencies(lessonPlanId, lessonGradeLevelId);
+    final isLglTemp = lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+
     final payload = <String, dynamic>{
       'lesson_grade_level':
-          lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix)
-              ? lessonGradeLevelId
-              : int.parse(lessonGradeLevelId),
+          isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
       'time_minutes': timeMinutes,
       'stage': stage.trim(),
       'description': description.trim(),
@@ -526,11 +612,11 @@ class CurriculumRepository {
     int maxScore = 10,
   }) async {
     final deps = _collectDependencies(lessonPlanId, lessonGradeLevelId);
+    final isLglTemp = lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+
     final payload = <String, dynamic>{
       'lesson_grade_level':
-          lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix)
-              ? lessonGradeLevelId
-              : int.parse(lessonGradeLevelId),
+          isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
       'task_name': taskName.trim(),
       'task_description': taskDescription.trim(),
       'grade_weight': gradeWeight.toStringAsFixed(2),
@@ -584,15 +670,15 @@ class CurriculumRepository {
     String notes = '',
   }) async {
     final deps = _collectDependencies(lessonPlanId, lessonGradeLevelId);
+    final isParentTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
+    final isLglTemp = lessonGradeLevelId != null &&
+        lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+
     final payload = <String, dynamic>{
+      'lesson_plan': isParentTemp ? lessonPlanId : int.parse(lessonPlanId),
       if (lessonGradeLevelId != null)
         'lesson_grade_level':
-            lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix)
-                ? lessonGradeLevelId
-                : int.parse(lessonGradeLevelId),
-      'lesson_plan': lessonPlanId.startsWith(IdMappingStore.tempPrefix)
-          ? lessonPlanId
-          : int.parse(lessonPlanId),
+            isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
       'title': title.trim(),
       'material_type': materialType,
       'resource_url': resourceUrl.trim(),
@@ -606,7 +692,7 @@ class CurriculumRepository {
       final response =
           await _apiClient.post(ApiEndpoints.materials, body: payload);
       final created = LessonMaterial.fromJson(response as Map<String, dynamic>)
-          .copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
+          .copyWith(gradeLevelName: gradeLevelName);
       await _cache.appendChild(lessonPlanId, material: created);
       return created;
     } on ApiException catch (e) {
@@ -680,8 +766,7 @@ class CurriculumRepository {
     }
   }
 
-  List<String> _collectDependencies(
-      String lessonPlanId, String? lessonGradeLevelId) {
+  List<String> _collectDependencies(String lessonPlanId, String? lessonGradeLevelId) {
     return [
       if (lessonPlanId.startsWith(IdMappingStore.tempPrefix)) lessonPlanId,
       if (lessonGradeLevelId != null &&

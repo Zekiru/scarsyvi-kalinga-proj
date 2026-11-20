@@ -64,6 +64,12 @@ class CurriculumCacheStore {
     await saveLessonPlans(currentList);
   }
 
+  Future<void> removeLessonPlan(String id) async {
+    await _box.delete(_lessonDetailKey(id));
+    final currentList = getLessonPlans()..removeWhere((p) => p.id == id);
+    await saveLessonPlans(currentList);
+  }
+
   Future<void> appendChild(
     String lessonPlanId, {
     LessonGradeLevel? gradeLevel,
