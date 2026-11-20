@@ -49,8 +49,15 @@ class Account {
 
   bool get isAdmin => role == AccountRole.admin;
   bool get isChecker => role == AccountRole.checker;
-  bool get isTeacher => role == AccountRole.teacher;
+
+  /// Every role in Kalinga (TEACHER, CHECKER, ADMIN) inherits base teacher capabilities.
+  bool get canTeach => true;
+
+  /// Checkers and Admins can review assigned lesson plans and moderate forums.
   bool get canModerate => isAdmin || isChecker;
+
+  /// Only Admins can assign checkers or manage user accounts/roles.
+  bool get canAdminister => isAdmin;
 
   factory Account.fromJson(Map<String, dynamic> json) {
     return Account(

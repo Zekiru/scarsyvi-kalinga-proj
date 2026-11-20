@@ -14,6 +14,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _passwordConfirmCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
@@ -21,12 +22,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool _isRegisterMode = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   AccountRole _selectedRole = AccountRole.teacher;
 
   @override
   void dispose() {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
+    _passwordConfirmCtrl.dispose();
     _emailCtrl.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
@@ -43,6 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         username: _usernameCtrl.text,
         email: _emailCtrl.text,
         password: _passwordCtrl.text,
+        passwordConfirm: _passwordConfirmCtrl.text,
         firstName: _firstNameCtrl.text,
         lastName: _lastNameCtrl.text,
         school: _schoolCtrl.text,
@@ -206,8 +210,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         validator: (v) =>
                             (v == null || v.length < 6) ? 'Minimum 6 characters' : null,
-                        onFieldSubmitted: (_) => _submit(),
+                        onFieldSubmitted: (_) {
+                          if (!_isRegisterMode) _submit();
+                        },
                       ),
+                      if (_isRegisterMode) ...[
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _passwordConfirmCtrl,
+                          obscureText: _obscureConfirmPassword,
+                          decoration: InputDecoration(
+                            labelText: 'Confirm Password',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscureConfirmPassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                              ),
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) {
+                              return 'Please confirm your password';
+                            }
+                            if (v != _passwordCtrl.text) {
+                              return 'Passwords do not match';
+                            }
+                            return null;
+                          },
+                          onFieldSubmitted: (_) => _submit(),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       FilledButton(
                         onPressed: authState.isLoading ? null : _submit,
@@ -226,7 +264,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       TextButton(
                         onPressed: authState.isLoading
                             ? null
-                            : () => setState(() => _isRegisterMode = !_isRegisterMode),
+                            : () {
+                                _passwordConfirmCtrl.clear();
+                                setState(() => _isRegisterMode = !_isRegisterMode);
+                              },
                         child: Text(
                           _isRegisterMode
                               ? 'Already have an account? Sign In'
