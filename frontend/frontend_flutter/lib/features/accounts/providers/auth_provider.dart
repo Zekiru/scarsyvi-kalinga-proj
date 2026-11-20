@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../data/account_model.dart';
 import '../data/auth_repository.dart';
@@ -145,6 +146,7 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
+    ref.read(apiClientProvider).clearCachedToken();
     await ref.read(authRepositoryProvider).logout();
     state = const AuthState(
       status: AuthStatus.unauthenticated,
