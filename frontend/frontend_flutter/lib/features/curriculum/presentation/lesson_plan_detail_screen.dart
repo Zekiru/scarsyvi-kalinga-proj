@@ -9,6 +9,7 @@ import 'widgets/grade_levels_tab.dart';
 import 'widgets/lesson_flows_tab.dart';
 import 'widgets/lesson_gradings_tab.dart';
 import 'widgets/materials_tab.dart';
+import 'widgets/overview_tab.dart';
 
 class LessonPlanDetailScreen extends ConsumerWidget {
   const LessonPlanDetailScreen({
@@ -38,7 +39,7 @@ class LessonPlanDetailScreen extends ConsumerWidget {
         final canReview = currentUser?.canModerate ?? false;
 
         return DefaultTabController(
-          length: 4,
+          length: 5,
           child: Scaffold(
             appBar: AppBar(
               title: Text(plan.title),
@@ -91,35 +92,21 @@ class LessonPlanDetailScreen extends ConsumerWidget {
               bottom: const TabBar(
                 isScrollable: true,
                 tabs: [
-                  Tab(text: 'Grades'),
-                  Tab(text: 'Lesson Flow'),
-                  Tab(text: 'Grading'),
+                  Tab(text: 'Overview'),
+                  Tab(text: 'Grades & Standards'),
+                  Tab(text: 'Flow of Lesson'),
+                  Tab(text: 'Grading Tasks'),
                   Tab(text: 'Materials'),
                 ],
               ),
             ),
-            body: Column(
+            body: TabBarView(
               children: [
-                if (plan.description.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.4),
-                    child: Text(plan.description),
-                  ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      GradeLevelsTab(plan: plan, canEdit: canEdit),
-                      LessonFlowsTab(plan: plan, canEdit: canEdit),
-                      LessonGradingsTab(plan: plan, canEdit: canEdit),
-                      MaterialsTab(plan: plan, canEdit: canEdit),
-                    ],
-                  ),
-                ),
+                OverviewTab(plan: plan),
+                GradeLevelsTab(plan: plan, canEdit: canEdit),
+                LessonFlowsTab(plan: plan, canEdit: canEdit),
+                LessonGradingsTab(plan: plan, canEdit: canEdit),
+                MaterialsTab(plan: plan, canEdit: canEdit),
               ],
             ),
           ),

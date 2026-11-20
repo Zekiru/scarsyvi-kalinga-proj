@@ -11,6 +11,8 @@ Future<LessonPlan?> showCreateLessonPlanDialog(
   final subjectCtrl = TextEditingController();
   final langCtrl = TextEditingController(text: 'English');
   final demoCtrl = TextEditingController();
+  final modelCtrl = TextEditingController();
+  final themeCtrl = TextEditingController();
   final formKey = GlobalKey<FormState>();
   bool isPublic = true;
 
@@ -18,58 +20,75 @@ Future<LessonPlan?> showCreateLessonPlanDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
-        title: const Text('New Lesson Plan'),
+        title: const Text('New Multigrade Lesson Plan'),
         content: SizedBox(
-          width: 440,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Lesson Title',
-                    border: OutlineInputBorder(),
+          width: 460,
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Lesson Plan Title',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: subjectCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Learning Area (e.g. Science, Mathematics)',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: subjectCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Learning Area (e.g. Mathematics, Filipino)',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: langCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Primary Language (e.g. English, Tagalog / Filipino)',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: langCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Primary Language (e.g. English, Tagalog / Filipino)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: demoCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Suggested Demographic (e.g. Grade 2-3 Multigrade)',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: demoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Suggested Demographic (e.g. Grade 2-3 Multigrade)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Public (Visible for Forking)'),
-                  value: isPublic,
-                  onChanged: (val) => setDialogState(() => isPublic = val),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: modelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Multigrade Model (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: themeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Shared Sub-theme (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Public (Visible for Forking)'),
+                    value: isPublic,
+                    onChanged: (val) => setDialogState(() => isPublic = val),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -88,6 +107,8 @@ Future<LessonPlan?> showCreateLessonPlanDialog(
                     subject: subjectCtrl.text,
                     primaryLanguage: langCtrl.text,
                     suggestedDemographic: demoCtrl.text,
+                    multigradeModel: modelCtrl.text,
+                    sharedSubTheme: themeCtrl.text,
                     isPublic: isPublic,
                   );
               if (ctx.mounted) Navigator.pop(ctx, plan);

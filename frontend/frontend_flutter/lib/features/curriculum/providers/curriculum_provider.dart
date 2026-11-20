@@ -46,6 +46,9 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     required String subject,
     required String primaryLanguage,
     required String suggestedDemographic,
+    String multigradeModel = '',
+    String sharedSubTheme = '',
+    String learnerContext = '',
     bool isPublic = true,
   }) async {
     final user = ref.read(currentUserProvider);
@@ -56,6 +59,9 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
       subject: subject,
       primaryLanguage: primaryLanguage,
       suggestedDemographic: suggestedDemographic,
+      multigradeModel: multigradeModel,
+      sharedSubTheme: sharedSubTheme,
+      learnerContext: learnerContext,
       isPublic: isPublic,
       authorId: user?.id,
       authorName: user?.username ?? '',

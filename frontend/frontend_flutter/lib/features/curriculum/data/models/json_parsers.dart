@@ -12,10 +12,43 @@ int? asNullableInt(dynamic v) {
   if (v is String) return int.tryParse(v);
   if (v is Map<String, dynamic>) {
     return asNullableInt(
-      v['id'] ?? v['lp_id'] ?? v['gl_id'] ?? v['grade_level_id'] ?? v['user_id'],
+      v['id'] ??
+          v['lp_id'] ??
+          v['lgl_id'] ??
+          v['gl_id'] ??
+          v['grade_level_id'] ??
+          v['user_id'] ??
+          v['pk'],
     );
   }
   return null;
+}
+
+String asIdString(dynamic v, [String fallback = '']) {
+  if (v == null) return fallback;
+  if (v is Map<String, dynamic>) {
+    final inner = v['id'] ??
+        v['lgl_id'] ??
+        v['lp_id'] ??
+        v['lf_id'] ??
+        v['lg_id'] ??
+        v['gl_id'] ??
+        v['pk'];
+    return inner == null ? fallback : inner.toString();
+  }
+  return v.toString();
+}
+
+String? asNullableIdString(dynamic v) {
+  final s = asIdString(v);
+  return s.isEmpty ? null : s;
+}
+
+double asDouble(dynamic v, [double fallback = 0.0]) {
+  if (v is double) return v;
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v) ?? fallback;
+  return fallback;
 }
 
 String asString(dynamic v, [String fallback = '']) {

@@ -15,19 +15,38 @@ class MaterialsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: plan.materials.isEmpty
-          ? const Center(child: Text('No teaching materials listed yet.'))
-          : ListView.builder(
+          ? const Center(child: Text('No instructional materials or references listed yet.'))
+          : ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: plan.materials.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
                 final m = plan.materials[i];
                 return Card(
                   child: ListTile(
                     leading: const Icon(Icons.attachment),
                     title: Text(m.title),
-                    subtitle: Text(
-                      [m.materialType, if (m.resourceUrl.isNotEmpty) m.resourceUrl]
-                          .join(' • '),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (m.gradeLevelName.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Chip(
+                              label: Text(m.gradeLevelName),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        Text(
+                          [m.materialType, if (m.resourceUrl.isNotEmpty) m.resourceUrl]
+                              .join(' • '),
+                        ),
+                        if (m.notes.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(m.notes),
+                          ),
+                      ],
                     ),
                     trailing: m.isPendingSync
                         ? const Chip(label: Text('Queued'))
@@ -46,64 +65,100 @@ class MaterialsTab extends ConsumerWidget {
   }
 
   Future<void> _addMaterialDialog(BuildContext context, WidgetRef ref) async {
+    LessonGradeLevel? selectedGrade =
+        plan.gradeLevels.isNotEmpty ? plan.gradeLevels.first : null;
     final titleCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Teaching Material'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Material Title',
-                border: OutlineInputBorder(),
-              ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Add Instructional Material / Reference'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (plan.gradeLevels.isNotEmpty) ...[
+                  DropdownButtonFormField<LessonGradeLevel?>(
+                    value: selectedGrade,
+                    decoration: const InputDecoration(
+                      labelText: 'Grade Level (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<LessonGradeLevel?>(
+                        value: null,
+                        child: Text('All Grade Levels'),
+                      ),
+                      ...plan.gradeLevels.map(
+                        (g) => DropdownMenuItem<LessonGradeLevel?>(
+                          value: g,
+                          child: Text(
+                            g.gradeLevelName.isNotEmpty
+                                ? g.gradeLevelName
+                                : 'Grade ${g.gradeLevelId}',
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) => setState(() => selectedGrade = val),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Material / Reference Title',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Resource URL / Reference Code (Optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Preparation Notes',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Resource URL / Reference (Optional)',
-                border: OutlineInputBorder(),
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Preparation Notes',
-                border: OutlineInputBorder(),
-              ),
+            FilledButton(
+              onPressed: () async {
+                if (titleCtrl.text.trim().isEmpty) return;
+                await ref.read(curriculumRepositoryProvider).addMaterial(
+                      lessonPlanId: plan.id,
+                      lessonGradeLevelId: selectedGrade?.id,
+                      gradeLevelName: selectedGrade?.gradeLevelName ?? '',
+                      title: titleCtrl.text,
+                      resourceUrl: urlCtrl.text,
+                      notes: notesCtrl.text,
+                    );
+                ref.read(syncStatusProvider.notifier).refreshCounts();
+                ref.invalidate(lessonPlanDetailProvider(plan.id));
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (titleCtrl.text.trim().isEmpty) return;
-              await ref.read(curriculumRepositoryProvider).addMaterial(
-                    lessonPlanId: plan.id,
-                    title: titleCtrl.text,
-                    resourceUrl: urlCtrl.text,
-                    notes: notesCtrl.text,
-                  );
-              ref.read(syncStatusProvider.notifier).refreshCounts();
-              ref.invalidate(lessonPlanDetailProvider(plan.id));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }

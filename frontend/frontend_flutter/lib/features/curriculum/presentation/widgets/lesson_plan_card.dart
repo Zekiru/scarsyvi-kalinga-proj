@@ -22,7 +22,7 @@ class LessonPlanCard extends StatelessWidget {
       if (plan.subject.isNotEmpty) plan.subject,
       if (plan.primaryLanguage.isNotEmpty) plan.primaryLanguage,
       if (gradesSummary.isNotEmpty) gradesSummary,
-      if (plan.authorName.isNotEmpty) 'by @${plan.authorName}',
+      if (plan.authorName.isNotEmpty) 'by ${plan.authorName}',
     ];
 
     return Card(
