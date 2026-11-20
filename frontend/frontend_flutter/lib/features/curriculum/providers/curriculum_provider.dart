@@ -21,7 +21,6 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     final repo = ref.watch(curriculumRepositoryProvider);
     final cached = repo.getCachedLessonPlans();
 
-    // Only use cached items immediately if they actually have titles populated
     if (cached.isNotEmpty && cached.every((p) => p.title.isNotEmpty)) {
       Future.microtask(() => refresh());
       return cached;
