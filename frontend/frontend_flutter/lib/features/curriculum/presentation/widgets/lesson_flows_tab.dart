@@ -125,7 +125,7 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<LessonGradeLevel>(
-                  value: selectedGrade,
+                  initialValue: selectedGrade,
                   decoration: const InputDecoration(
                     labelText: 'Grade Level (lesson_grade_level)',
                     border: OutlineInputBorder(),

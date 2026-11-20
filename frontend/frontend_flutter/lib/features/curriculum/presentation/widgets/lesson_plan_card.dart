@@ -6,10 +6,12 @@ class LessonPlanCard extends StatelessWidget {
     super.key,
     required this.plan,
     required this.onTap,
+    this.roleBadge,
   });
 
   final LessonPlan plan;
   final VoidCallback onTap;
+  final String? roleBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +58,12 @@ class LessonPlanCard extends StatelessWidget {
           spacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            if (roleBadge != null && roleBadge!.isNotEmpty)
+              Chip(
+                label: Text(roleBadge!),
+                avatar: const Icon(Icons.rate_review_outlined, size: 16),
+                visualDensity: VisualDensity.compact,
+              ),
             if (plan.isPendingSync || plan.isLocalDraft)
               const Chip(
                 label: Text('Queued'),

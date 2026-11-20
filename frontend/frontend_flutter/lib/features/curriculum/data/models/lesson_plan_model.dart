@@ -95,6 +95,59 @@ class LessonPlan {
     return authorId == userId || authorIds.contains(userId);
   }
 
+  /// True when [userId] created this plan (primary author or local draft).
+  bool isCreatedBy(int? userId) {
+    if (isLocalDraft) return true;
+    if (userId == null) return false;
+
+    final userEntries =
+        authorEntries.where((e) => e.userId == userId).toList();
+    if (userEntries.isNotEmpty) {
+      final hasPrimaryRole = userEntries.any((e) {
+        final role = e.authorRole.trim().toLowerCase();
+        return role.isEmpty ||
+            role == 'author' ||
+            role == 'primary' ||
+            role == 'primary author' ||
+            role == 'creator';
+      });
+      if (hasPrimaryRole) return true;
+      if (authorEntries.first.userId == userId) return true;
+      return false;
+    }
+
+    return authorId == userId ||
+        (authorIds.isNotEmpty && authorIds.first == userId);
+  }
+
+  /// True when [userId] participated as checker, co-author, or secondary contributor
+  /// without being the primary creator.
+  bool isContributedBy(int? userId) {
+    if (userId == null || isCreatedBy(userId)) return false;
+    if (checkerId == userId) return true;
+    if (authorIds.contains(userId)) return true;
+    return authorEntries.any((e) => e.userId == userId);
+  }
+
+  /// Human-readable role badge for [userId] when [isContributedBy] is true.
+  String? contributionRoleFor(int? userId) {
+    if (userId == null) return null;
+    final roles = <String>[];
+    for (final entry in authorEntries) {
+      if (entry.userId == userId && entry.authorRole.trim().isNotEmpty) {
+        roles.add(entry.authorRole.trim());
+      }
+    }
+    if (roles.isEmpty && authorIds.contains(userId)) {
+      roles.add('Co-Author');
+    }
+    if (checkerId == userId) {
+      roles.add('Checker');
+    }
+    if (roles.isEmpty) return null;
+    return roles.toSet().join(' • ');
+  }
+
   static const Set<String> _knownKeys = {
     'lp_id', 'id', 'pk', 'lp_title', 'title', 'name',
     'learning_area', 'subject', 'subject_area',
@@ -328,6 +381,17 @@ class LessonPlan {
         'description': description,
         'author': authorId,
         'author_username': authorName,
+        if (authorEntries.isNotEmpty)
+          'authors': authorEntries
+              .map((e) => {
+                    'author_role': e.authorRole,
+                    'account': {
+                      if (e.userId != null) 'id': e.userId,
+                      'username': e.username,
+                      'first_name': e.fullName,
+                    },
+                  })
+              .toList(),
         'checker': checkerId,
         'checker_username': checkerName,
         'is_approved': isApproved,

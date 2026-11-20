@@ -83,7 +83,7 @@ class MaterialsTab extends ConsumerWidget {
               children: [
                 if (plan.gradeLevels.isNotEmpty) ...[
                   DropdownButtonFormField<LessonGradeLevel?>(
-                    value: selectedGrade,
+                    initialValue: selectedGrade,
                     decoration: const InputDecoration(
                       labelText: 'Grade Level (Optional)',
                       border: OutlineInputBorder(),

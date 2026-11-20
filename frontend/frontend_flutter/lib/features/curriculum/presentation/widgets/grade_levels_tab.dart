@@ -137,7 +137,7 @@ class GradeLevelsTab extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<GradeLevel>(
-                    value: selected,
+                    initialValue: selected,
                     decoration: const InputDecoration(
                       labelText: 'Grade Level',
                       border: OutlineInputBorder(),
