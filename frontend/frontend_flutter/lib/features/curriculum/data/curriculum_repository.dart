@@ -35,8 +35,16 @@ class CurriculumRepository {
 
   List<dynamic> _extractList(dynamic response) {
     if (response is List) return response;
-    if (response is Map<String, dynamic> && response['results'] is List) {
-      return response['results'] as List<dynamic>;
+    if (response is Map<String, dynamic>) {
+      if (response['results'] is List) {
+        return response['results'] as List<dynamic>;
+      }
+      if (response['data'] is List) {
+        return response['data'] as List<dynamic>;
+      }
+      for (final val in response.values) {
+        if (val is List) return val;
+      }
     }
     return const [];
   }
@@ -98,7 +106,6 @@ class CurriculumRepository {
       final serverPlans =
           _parseItems(_extractList(response), LessonPlan.fromJson);
 
-      // Preserve any unsynced local draft plans so they don't vanish before replay
       final unsyncedLocal =
           getCachedLessonPlans().where((p) => p.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverPlans];
@@ -125,7 +132,6 @@ class CurriculumRepository {
   Future<LessonPlan> fetchLessonPlanDetail(String id) async {
     final serverId = int.tryParse(id);
     if (serverId == null) {
-      // Offline draft (`temp_lp_*`) — read directly from Hive cache
       final cached = getCachedLessonPlanDetail(id);
       if (cached != null) return cached;
       throw ApiException(message: 'Local draft lesson plan not found.');
@@ -134,9 +140,14 @@ class CurriculumRepository {
     try {
       final response =
           await _apiClient.get(ApiEndpoints.lessonPlanDetail(serverId));
-      final plan = LessonPlan.fromJson(response as Map<String, dynamic>);
+      var plan = LessonPlan.fromJson(response as Map<String, dynamic>);
 
-      // Merge any unsynced local children onto the fresh server plan
+      if (plan.flows.isEmpty &&
+          plan.gradings.isEmpty &&
+          plan.materials.isEmpty) {
+        plan = await _hydrateChildrenFromEndpoints(serverId, plan);
+      }
+
       final existing = getCachedLessonPlanDetail(id);
       final merged = existing == null
           ? plan
@@ -169,6 +180,54 @@ class CurriculumRepository {
     }
   }
 
+  Future<LessonPlan> _hydrateChildrenFromEndpoints(
+    int serverId,
+    LessonPlan plan,
+  ) async {
+    final query = {'lesson_plan': serverId};
+    final planIdStr = serverId.toString();
+
+    final results = await Future.wait<dynamic>([
+      if (plan.gradeLevels.isEmpty)
+        _apiClient
+            .get(ApiEndpoints.lessonGradeLevels, queryParams: query)
+            .catchError((_) => null)
+      else
+        Future.value(null),
+      _apiClient
+          .get(ApiEndpoints.lessonFlows, queryParams: query)
+          .catchError((_) => null),
+      _apiClient
+          .get(ApiEndpoints.lessonGradings, queryParams: query)
+          .catchError((_) => null),
+      _apiClient
+          .get(ApiEndpoints.materials, queryParams: query)
+          .catchError((_) => null),
+    ]);
+
+    final gradeLevels = plan.gradeLevels.isNotEmpty
+        ? plan.gradeLevels
+        : _parseItems(_extractList(results[0]), LessonGradeLevel.fromJson)
+            .where((e) => e.lessonPlanId.isEmpty || e.lessonPlanId == planIdStr)
+            .toList();
+    final flows = _parseItems(_extractList(results[1]), LessonFlow.fromJson)
+        .where((e) => e.lessonPlanId.isEmpty || e.lessonPlanId == planIdStr)
+        .toList();
+    final gradings = _parseItems(_extractList(results[2]), LessonGrading.fromJson)
+        .where((e) => e.lessonPlanId.isEmpty || e.lessonPlanId == planIdStr)
+        .toList();
+    final materials = _parseItems(_extractList(results[3]), LessonMaterial.fromJson)
+        .where((e) => e.lessonPlanId.isEmpty || e.lessonPlanId == planIdStr)
+        .toList();
+
+    return plan.copyWith(
+      gradeLevels: gradeLevels,
+      flows: flows,
+      gradings: gradings,
+      materials: materials,
+    );
+  }
+
   LessonPlan? getCachedLessonPlanDetail(String id) {
     final raw = _cacheBox.get(_lessonDetailKey(id));
     if (raw != null && raw.isNotEmpty) {
@@ -198,15 +257,17 @@ class CurriculumRepository {
   Future<LessonPlan> createLessonPlan({
     required String title,
     required String subject,
-    required String description,
+    required String primaryLanguage,
+    required String suggestedDemographic,
     bool isPublic = true,
     int? authorId,
     String authorName = '',
   }) async {
     final payload = {
-      'title': title.trim(),
-      'subject': subject.trim(),
-      'description': description.trim(),
+      'lp_title': title.trim(),
+      'learning_area': subject.trim(),
+      'primary_language': primaryLanguage.trim(),
+      'suggested_demographic': suggestedDemographic.trim(),
       'is_public': isPublic,
     };
 
@@ -224,9 +285,12 @@ class CurriculumRepository {
         id: tempId,
         title: title.trim(),
         subject: subject.trim(),
-        description: description.trim(),
+        primaryLanguage: primaryLanguage.trim(),
+        suggestedDemographic: suggestedDemographic.trim(),
+        description: suggestedDemographic.trim(),
         authorId: authorId,
         authorName: authorName,
+        authorIds: authorId != null ? [authorId] : const [],
         isPublic: isPublic,
         isPendingSync: true,
       );
@@ -465,7 +529,6 @@ class CurriculumRepository {
     }
   }
 
-  /// Forks an existing server lesson plan (`POST /curriculum/lesson-plans/{id}/fork/`).
   Future<LessonPlan> forkLessonPlan(int serverId) async {
     final response =
         await _apiClient.post(ApiEndpoints.lessonPlanFork(serverId));
@@ -474,7 +537,6 @@ class CurriculumRepository {
     return forked;
   }
 
-  /// Checker or Admin approves/unapproves a lesson plan (`PATCH /curriculum/lesson-plans/{id}/`).
   Future<LessonPlan> setLessonPlanApproval({
     required String lessonPlanId,
     required bool isApproved,

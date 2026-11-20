@@ -30,8 +30,7 @@ class LessonPlanDetailScreen extends ConsumerWidget {
         body: Center(child: Text('Error loading lesson plan: $err')),
       ),
       data: (plan) {
-        final isOwner =
-            currentUser != null && plan.authorId == currentUser.id;
+        final isOwner = plan.isOwnedBy(currentUser?.id);
         final canEdit = isOwner || (currentUser?.canAdminister ?? false);
         final canReview = currentUser?.canModerate ?? false;
 

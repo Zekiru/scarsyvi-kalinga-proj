@@ -21,8 +21,8 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     final repo = ref.watch(curriculumRepositoryProvider);
     final cached = repo.getCachedLessonPlans();
 
-    if (cached.isNotEmpty) {
-      // Refresh in background while returning cached plans immediately
+    // Only use cached items immediately if they actually have titles populated
+    if (cached.isNotEmpty && cached.every((p) => p.title.isNotEmpty)) {
       Future.microtask(() => refresh());
       return cached;
     }
@@ -45,7 +45,8 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
   Future<LessonPlan> createLessonPlan({
     required String title,
     required String subject,
-    required String description,
+    required String primaryLanguage,
+    required String suggestedDemographic,
     bool isPublic = true,
   }) async {
     final user = ref.read(currentUserProvider);
@@ -54,7 +55,8 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
     final created = await repo.createLessonPlan(
       title: title,
       subject: subject,
-      description: description,
+      primaryLanguage: primaryLanguage,
+      suggestedDemographic: suggestedDemographic,
       isPublic: isPublic,
       authorId: user?.id,
       authorName: user?.username ?? '',

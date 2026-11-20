@@ -24,7 +24,8 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
   Future<void> _showCreateDialog() async {
     final titleCtrl = TextEditingController();
     final subjectCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
+    final langCtrl = TextEditingController(text: 'English');
+    final demoCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool isPublic = true;
 
@@ -34,7 +35,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('New Lesson Plan'),
           content: SizedBox(
-            width: 420,
+            width: 440,
             child: Form(
               key: formKey,
               child: Column(
@@ -53,7 +54,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                   TextFormField(
                     controller: subjectCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Subject (e.g. Science, Mathematics)',
+                      labelText: 'Learning Area (e.g. Science, Mathematics)',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) =>
@@ -61,10 +62,18 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
-                    controller: descCtrl,
-                    maxLines: 3,
+                    controller: langCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Overview / Learning Goals',
+                      labelText: 'Primary Language (e.g. English, Tagalog / Filipino)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: demoCtrl,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Suggested Demographic (e.g. Grade 2-3 Multigrade)',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -92,7 +101,8 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                     .createLessonPlan(
                       title: titleCtrl.text,
                       subject: subjectCtrl.text,
-                      description: descCtrl.text,
+                      primaryLanguage: langCtrl.text,
+                      suggestedDemographic: demoCtrl.text,
                       isPublic: isPublic,
                     );
                 if (ctx.mounted) Navigator.pop(ctx, plan);
@@ -125,7 +135,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
             child: TextField(
               controller: _searchCtrl,
               decoration: InputDecoration(
-                hintText: 'Search lesson plans by title or subject...',
+                hintText: 'Search lesson plans by title or learning area...',
                 prefixIcon: const Icon(Icons.search),
                 border: const OutlineInputBorder(),
                 suffixIcon: _searchCtrl.text.isNotEmpty
@@ -179,17 +189,47 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final plan = plans[index];
+                      final gradesSummary = plan.gradeLevels
+                          .map((g) => g.gradeLevelName)
+                          .where((n) => n.isNotEmpty)
+                          .join(', ');
+
+                      final metaParts = <String>[
+                        if (plan.subject.isNotEmpty) plan.subject,
+                        if (plan.primaryLanguage.isNotEmpty) plan.primaryLanguage,
+                        if (gradesSummary.isNotEmpty) gradesSummary,
+                        if (plan.authorName.isNotEmpty) 'by @${plan.authorName}',
+                      ];
+
                       return Card(
                         child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           title: Text(
-                            plan.title,
+                            plan.title.isNotEmpty
+                                ? plan.title
+                                : 'Untitled Lesson Plan #${plan.id}',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '${plan.subject}${plan.authorName.isNotEmpty ? ' • by @${plan.authorName}' : ''}',
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (metaParts.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(metaParts.join(' • ')),
+                                ),
+                              if (plan.suggestedDemographic.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    plan.suggestedDemographic,
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ),
+                            ],
                           ),
                           trailing: Wrap(
                             spacing: 6,
