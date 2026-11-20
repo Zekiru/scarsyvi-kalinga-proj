@@ -73,11 +73,11 @@ class ApiEndpoints {
     return ordering != null ? '$base?ordering=$ordering' : base;
   }
 
-  static String classroomEnrollStudents(int id) =>
+  static String classroomEnrollStudents(Object id) =>
       '/classrooms/classrooms/$id/enroll-students/';
-  static String classroomRecordAttendance(int id) =>
+  static String classroomRecordAttendance(Object id) =>
       '/classrooms/classrooms/$id/record-attendance/';
-  static String classroomSubmitGrades(int id) =>
+  static String classroomSubmitGrades(Object id) =>
       '/classrooms/classrooms/$id/submit-grades/';
 
   static const String students = '/classrooms/students/';
