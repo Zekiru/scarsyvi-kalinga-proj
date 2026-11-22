@@ -9,6 +9,8 @@ import '../data/forum_repository.dart';
 import '../providers/forum_provider.dart';
 import 'forum_threads_screen.dart';
 
+enum _ForumGroupFilter { all, owned, participated, other }
+
 class ForumsScreen extends ConsumerStatefulWidget {
   const ForumsScreen({super.key});
 
@@ -18,6 +20,7 @@ class ForumsScreen extends ConsumerStatefulWidget {
 
 class _ForumsScreenState extends ConsumerState<ForumsScreen> {
   final _searchCtrl = TextEditingController();
+  _ForumGroupFilter _selectedGroup = _ForumGroupFilter.all;
 
   @override
   void dispose() {
@@ -179,7 +182,6 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
       return false;
     }
 
-    // Check inline threads on the Forum object first, then cached threads/details
     final threads = forum.threads.isNotEmpty
         ? forum.threads
         : repo.getCachedThreads(forum.id);
@@ -196,48 +198,6 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
       }
     }
     return false;
-  }
-
-  Widget _buildSectionHeader(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required int count,
-  }) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: colors.primary),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '$count',
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colors.onPrimaryContainer,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildForumCard(
@@ -506,68 +466,154 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
                   }
                 }
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(forumsProvider.notifier).refresh();
-                    ref.invalidate(participatedForumIdsProvider);
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-                    children: [
-                      if (ownedForums.isNotEmpty) ...[
-                        _buildSectionHeader(
-                          context,
-                          icon: Icons.menu_book_outlined,
-                          title: 'My Lesson Plan Forums',
-                          count: ownedForums.length,
-                        ),
-                        ...ownedForums.map(
-                          (f) => _buildForumCard(
-                            context,
-                            f,
-                            isOwner: true,
-                            isParticipant: false,
+                final showOwned = _selectedGroup == _ForumGroupFilter.all ||
+                    _selectedGroup == _ForumGroupFilter.owned;
+                final showParticipated =
+                    _selectedGroup == _ForumGroupFilter.all ||
+                        _selectedGroup == _ForumGroupFilter.participated;
+                final showOther = _selectedGroup == _ForumGroupFilter.all ||
+                    _selectedGroup == _ForumGroupFilter.other;
+
+                final hasVisibleItems = (showOwned && ownedForums.isNotEmpty) ||
+                    (showParticipated && participatedForums.isNotEmpty) ||
+                    (showOther && otherForums.isNotEmpty);
+
+                return Column(
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          FilterChip(
+                            label: Text('All (${forums.length})'),
+                            selected: _selectedGroup == _ForumGroupFilter.all,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup = _ForumGroupFilter.all,
+                            ),
                           ),
-                        ),
-                      ],
-                      if (participatedForums.isNotEmpty) ...[
-                        if (ownedForums.isNotEmpty) const Divider(height: 24),
-                        _buildSectionHeader(
-                          context,
-                          icon: Icons.forum_outlined,
-                          title: 'Participated Forums',
-                          count: participatedForums.length,
-                        ),
-                        ...participatedForums.map(
-                          (f) => _buildForumCard(
-                            context,
-                            f,
-                            isOwner: false,
-                            isParticipant: true,
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            avatar: const Icon(
+                              Icons.menu_book_outlined,
+                              size: 16,
+                            ),
+                            label: Text('My Plans (${ownedForums.length})'),
+                            selected:
+                                _selectedGroup == _ForumGroupFilter.owned,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup = _ForumGroupFilter.owned,
+                            ),
                           ),
-                        ),
-                      ],
-                      if (otherForums.isNotEmpty) ...[
-                        if (ownedForums.isNotEmpty ||
-                            participatedForums.isNotEmpty)
-                          const Divider(height: 24),
-                        _buildSectionHeader(
-                          context,
-                          icon: Icons.public_outlined,
-                          title: 'Other Forums',
-                          count: otherForums.length,
-                        ),
-                        ...otherForums.map(
-                          (f) => _buildForumCard(
-                            context,
-                            f,
-                            isOwner: false,
-                            isParticipant: false,
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            avatar: const Icon(Icons.forum_outlined, size: 16),
+                            label: Text(
+                              'Participated (${participatedForums.length})',
+                            ),
+                            selected: _selectedGroup ==
+                                _ForumGroupFilter.participated,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup =
+                                  _ForumGroupFilter.participated,
+                            ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            avatar: const Icon(Icons.public_outlined, size: 16),
+                            label: Text(
+                              'Other Forums (${otherForums.length})',
+                            ),
+                            selected:
+                                _selectedGroup == _ForumGroupFilter.other,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup = _ForumGroupFilter.other,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          await ref.read(forumsProvider.notifier).refresh();
+                          ref.invalidate(participatedForumIdsProvider);
+                        },
+                        child: !hasVisibleItems
+                            ? ListView(
+                                padding: const EdgeInsets.all(32),
+                                children: const [
+                                  Center(
+                                    child: Text('No forums in this category.'),
+                                  ),
+                                ],
+                              )
+                            : ListView(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                                children: [
+                                  if (showOwned && ownedForums.isNotEmpty) ...[
+                                    _ForumGroupHeader(
+                                      icon: Icons.menu_book_outlined,
+                                      title: 'My Lesson Plan Forums',
+                                      subtitle:
+                                          'Lesson plans created or co-authored by you',
+                                      count: ownedForums.length,
+                                    ),
+                                    ...ownedForums.map(
+                                      (f) => _buildForumCard(
+                                        context,
+                                        f,
+                                        isOwner: true,
+                                        isParticipant: false,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  if (showParticipated &&
+                                      participatedForums.isNotEmpty) ...[
+                                    _ForumGroupHeader(
+                                      icon: Icons.forum_outlined,
+                                      title: 'Participated Forums',
+                                      subtitle:
+                                          'Discussions you started or replied to',
+                                      count: participatedForums.length,
+                                    ),
+                                    ...participatedForums.map(
+                                      (f) => _buildForumCard(
+                                        context,
+                                        f,
+                                        isOwner: false,
+                                        isParticipant: true,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  if (showOther && otherForums.isNotEmpty) ...[
+                                    _ForumGroupHeader(
+                                      icon: Icons.public_outlined,
+                                      title: 'Other Forums',
+                                      subtitle:
+                                          'Community lesson plan discussions',
+                                      count: otherForums.length,
+                                    ),
+                                    ...otherForums.map(
+                                      (f) => _buildForumCard(
+                                        context,
+                                        f,
+                                        isOwner: false,
+                                        isParticipant: false,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -578,6 +624,67 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
         onPressed: _showOpenLessonPlanForumDialog,
         icon: const Icon(Icons.add_comment_outlined),
         label: const Text('Open Forum'),
+      ),
+    );
+  }
+}
+
+class _ForumGroupHeader extends StatelessWidget {
+  const _ForumGroupHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: colors.onSecondaryContainer),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Badge(
+            label: Text('$count'),
+            backgroundColor: colors.primary,
+            textColor: colors.onPrimary,
+          ),
+        ],
       ),
     );
   }

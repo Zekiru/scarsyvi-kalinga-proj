@@ -8,6 +8,8 @@ import '../data/classroom_models.dart';
 import '../providers/classroom_provider.dart';
 import 'classroom_detail_screen.dart';
 
+enum _ClassroomGroupFilter { all, myClasses, otherClasses }
+
 Future<Classroom?> showClassroomFormDialog(
   BuildContext context,
   WidgetRef ref, {
@@ -255,6 +257,7 @@ class ClassroomsScreen extends ConsumerStatefulWidget {
 
 class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
   final _searchCtrl = TextEditingController();
+  _ClassroomGroupFilter _selectedGroup = _ClassroomGroupFilter.all;
 
   @override
   void dispose() {
@@ -278,48 +281,6 @@ class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
     return currentUserId != null &&
         cls.adviserId != null &&
         cls.adviserId == currentUserId;
-  }
-
-  Widget _buildSectionHeader(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required int count,
-  }) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: colors.primary),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '$count',
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: colors.onPrimaryContainer,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildClassroomCard(
@@ -522,46 +483,118 @@ class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
                     .where((c) => !_isMyClassroom(c, currentUser?.id))
                     .toList();
 
-                return RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(classroomsProvider.notifier).refresh(),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-                    children: [
-                      if (myClassrooms.isNotEmpty) ...[
-                        _buildSectionHeader(
-                          context,
-                          icon: Icons.school_outlined,
-                          title: 'My Classrooms',
-                          count: myClassrooms.length,
-                        ),
-                        ...myClassrooms.map(
-                          (cls) => _buildClassroomCard(
-                            context,
-                            cls,
-                            isAdviser: true,
+                final showMine = _selectedGroup == _ClassroomGroupFilter.all ||
+                    _selectedGroup == _ClassroomGroupFilter.myClasses;
+                final showOther = _selectedGroup == _ClassroomGroupFilter.all ||
+                    _selectedGroup == _ClassroomGroupFilter.otherClasses;
+
+                final hasVisibleItems = (showMine && myClassrooms.isNotEmpty) ||
+                    (showOther && otherClassrooms.isNotEmpty);
+
+                return Column(
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          FilterChip(
+                            label: Text('All (${classrooms.length})'),
+                            selected:
+                                _selectedGroup == _ClassroomGroupFilter.all,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup = _ClassroomGroupFilter.all,
+                            ),
                           ),
-                        ),
-                      ],
-                      if (otherClassrooms.isNotEmpty) ...[
-                        if (myClassrooms.isNotEmpty)
-                          const Divider(height: 24),
-                        _buildSectionHeader(
-                          context,
-                          icon: Icons.groups_outlined,
-                          title: 'Other Classrooms',
-                          count: otherClassrooms.length,
-                        ),
-                        ...otherClassrooms.map(
-                          (cls) => _buildClassroomCard(
-                            context,
-                            cls,
-                            isAdviser: false,
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            avatar: const Icon(Icons.school_outlined, size: 16),
+                            label:
+                                Text('My Classrooms (${myClassrooms.length})'),
+                            selected: _selectedGroup ==
+                                _ClassroomGroupFilter.myClasses,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup =
+                                  _ClassroomGroupFilter.myClasses,
+                            ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            avatar: const Icon(Icons.groups_outlined, size: 16),
+                            label: Text(
+                              'Other Classrooms (${otherClassrooms.length})',
+                            ),
+                            selected: _selectedGroup ==
+                                _ClassroomGroupFilter.otherClasses,
+                            onSelected: (_) => setState(
+                              () => _selectedGroup =
+                                  _ClassroomGroupFilter.otherClasses,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () =>
+                            ref.read(classroomsProvider.notifier).refresh(),
+                        child: !hasVisibleItems
+                            ? ListView(
+                                padding: const EdgeInsets.all(32),
+                                children: const [
+                                  Center(
+                                    child: Text(
+                                      'No classrooms in this category.',
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : ListView(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                                children: [
+                                  if (showMine && myClassrooms.isNotEmpty) ...[
+                                    _ClassroomGroupHeader(
+                                      icon: Icons.school_outlined,
+                                      title: 'My Classrooms',
+                                      subtitle:
+                                          'Classes advised by you & local offline drafts',
+                                      count: myClassrooms.length,
+                                    ),
+                                    ...myClassrooms.map(
+                                      (cls) => _buildClassroomCard(
+                                        context,
+                                        cls,
+                                        isAdviser: true,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  if (showOther &&
+                                      otherClassrooms.isNotEmpty) ...[
+                                    _ClassroomGroupHeader(
+                                      icon: Icons.groups_outlined,
+                                      title: 'Other Classrooms',
+                                      subtitle:
+                                          'Classes advised by other educators',
+                                      count: otherClassrooms.length,
+                                    ),
+                                    ...otherClassrooms.map(
+                                      (cls) => _buildClassroomCard(
+                                        context,
+                                        cls,
+                                        isAdviser: false,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -572,6 +605,67 @@ class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
         onPressed: _onCreatePressed,
         icon: const Icon(Icons.add),
         label: const Text('New Class'),
+      ),
+    );
+  }
+}
+
+class _ClassroomGroupHeader extends StatelessWidget {
+  const _ClassroomGroupHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: colors.onSecondaryContainer),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Badge(
+            label: Text('$count'),
+            backgroundColor: colors.primary,
+            textColor: colors.onPrimary,
+          ),
+        ],
       ),
     );
   }
