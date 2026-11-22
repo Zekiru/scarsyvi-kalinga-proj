@@ -55,7 +55,7 @@ class ForumRepository {
   }
 
   // ==========================================
-  // FORUMS READS & CREATION
+  // FORUMS READS, INITIALIZATION & DELETION
   // ==========================================
 
   Future<List<Forum>> fetchForums({String? search}) async {
@@ -91,51 +91,40 @@ class ForumRepository {
     }
   }
 
-  /// Fetches or auto-resolves the forum linked to a specific `LessonPlan`
-  /// via `GET /api/v1/forums/forums/by-lesson-plan/?lesson_plan={id}`[cite: 3].
-  Future<Forum> fetchForumByLessonPlan(int lessonPlanServerId) async {
-    final response = await _apiClient.get(
-      ApiEndpoints.forumByLessonPlan,
-      queryParams: {'lesson_plan': lessonPlanServerId},
-    );
-    return Forum.fromJson(response as Map<String, dynamic>);
-  }
-
-  Future<Forum> createForum({
-    required String title,
-    String description = '',
-    String? lessonPlanId,
+  /// Idempotently initializes or fetches the `LessonPlanForum` for a `LessonPlan`
+  /// via `POST /api/v1/forums/forums/by-lesson-plan/` with `{"lesson_plan_id": id}`[cite: 6, 9, 11].
+  Future<Forum> getOrCreateForumForLessonPlan({
+    required String lessonPlanId,
     String lessonPlanTitle = '',
   }) async {
-    final deps = <String>[];
-    final isLpTemp = lessonPlanId != null &&
-        lessonPlanId.startsWith(IdMappingStore.tempPrefix);
-    if (isLpTemp) deps.add(lessonPlanId);
-
+    final isLpTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
     final payload = <String, dynamic>{
-      'title': title.trim(),
-      'description': description.trim(),
-      if (lessonPlanId != null && lessonPlanId.isNotEmpty)
-        'lesson_plan': isLpTemp ? lessonPlanId : int.parse(lessonPlanId),
+      'lesson_plan_id': isLpTemp ? lessonPlanId : int.parse(lessonPlanId),
     };
 
     try {
-      if (deps.isNotEmpty) {
+      if (isLpTemp) {
         throw ApiException(message: 'Lesson plan offline draft', isOffline: true);
       }
-      final response =
-          await _apiClient.post(ApiEndpoints.forums, body: payload);
-      final created = Forum.fromJson(response as Map<String, dynamic>);
-      await _upsertForumCache(created);
-      return created;
+      final response = await _apiClient.post(
+        ApiEndpoints.forumByLessonPlan,
+        body: payload,
+      );
+      final forum = Forum.fromJson(response as Map<String, dynamic>);
+      await _upsertForumCache(forum);
+      return forum;
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
+
+      final existingCached = getCachedForums()
+          .where((f) => f.lessonPlanId == lessonPlanId)
+          .firstOrNull;
+      if (existingCached != null) return existingCached;
 
       final tempId = IdMappingStore.generateTempId('frm');
       final draft = Forum(
         id: tempId,
-        title: title.trim(),
-        description: description.trim(),
+        title: lessonPlanTitle,
         lessonPlanId: lessonPlanId,
         lessonPlanTitle: lessonPlanTitle,
         isPendingSync: true,
@@ -144,20 +133,47 @@ class ForumRepository {
       await _syncQueue.enqueue(
         entityType: 'forum',
         method: 'POST',
-        endpoint: ApiEndpoints.forums,
+        endpoint: ApiEndpoints.forumByLessonPlan,
         payload: payload,
         tempClientId: tempId,
-        primaryKeyField: 'id',
-        dependsOnTempIds: deps,
+        primaryKeyField: 'forum_id',
+        dependsOnTempIds: isLpTemp ? [lessonPlanId] : const [],
       );
       await _upsertForumCache(draft);
       return draft;
     }
   }
 
+  Future<void> deleteForum(String forumId) async {
+    final serverId = int.tryParse(forumId);
+    final updated = getCachedForums().where((f) => f.id != forumId).toList();
+    await _cacheBox.put(_forumsKey, Forum.encodeList(updated));
+    await _cacheBox.delete(_forumThreadsKey(forumId));
+
+    if (serverId == null) return;
+
+    try {
+      await _apiClient.delete('${ApiEndpoints.forums}$serverId/');
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+      await _syncQueue.enqueue(
+        entityType: 'forum',
+        method: 'DELETE',
+        endpoint: '${ApiEndpoints.forums}$serverId/',
+        payload: const {},
+      );
+    }
+  }
+
   Future<void> _upsertForumCache(Forum forum) async {
     final list = [...getCachedForums()];
-    final idx = list.indexWhere((f) => f.id == forum.id);
+    final idx = list.indexWhere(
+      (f) =>
+          f.id == forum.id ||
+          (forum.lessonPlanId != null &&
+              forum.lessonPlanId!.isNotEmpty &&
+              f.lessonPlanId == forum.lessonPlanId),
+    );
     if (idx >= 0) {
       list[idx] = forum;
     } else {
@@ -226,7 +242,6 @@ class ForumRepository {
           await _apiClient.get(ApiEndpoints.threadDetail(serverId));
       var thread = ForumThread.fromJson(response as Map<String, dynamic>);
 
-      // Also fetch posts if not nested in detail response
       if (thread.posts.isEmpty) {
         final postsResp = await _apiClient.get(
           ApiEndpoints.posts,
@@ -327,7 +342,7 @@ class ForumRepository {
         endpoint: ApiEndpoints.threads,
         payload: payload,
         tempClientId: tempId,
-        primaryKeyField: 'id',
+        primaryKeyField: 'thread_id',
         dependsOnTempIds: isForumTemp ? [forumId] : const [],
       );
       await _saveThreadDetailCache(draft);
@@ -335,14 +350,88 @@ class ForumRepository {
     }
   }
 
+  Future<ForumThread> updateThread({
+    required ForumThread thread,
+    required String title,
+    required String body,
+  }) async {
+    final payload = <String, dynamic>{
+      'title': title.trim(),
+      'body': body.trim(),
+    };
+
+    final serverId = thread.serverId;
+    if (serverId == null) {
+      final updated = thread.copyWith(
+        title: title.trim(),
+        body: body.trim(),
+        isPendingSync: true,
+      );
+      await _saveThreadDetailCache(updated);
+      return updated;
+    }
+
+    try {
+      final response = await _apiClient.patch(
+        ApiEndpoints.threadDetail(serverId),
+        body: payload,
+      );
+      final updated = ForumThread.fromJson(response as Map<String, dynamic>);
+      await _saveThreadDetailCache(updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+      final updated = thread.copyWith(
+        title: title.trim(),
+        body: body.trim(),
+        isPendingSync: true,
+      );
+      await _syncQueue.enqueue(
+        entityType: 'forum_thread',
+        method: 'PATCH',
+        endpoint: ApiEndpoints.threadDetail(serverId),
+        payload: payload,
+      );
+      await _saveThreadDetailCache(updated);
+      return updated;
+    }
+  }
+
+  Future<void> deleteThread(ForumThread thread) async {
+    await _cacheBox.delete(_threadDetailKey(thread.id));
+    final list = getCachedThreads(thread.forumId)
+        .where((t) => t.id != thread.id)
+        .toList();
+    await _cacheBox.put(
+      _forumThreadsKey(thread.forumId),
+      jsonEncode(list.map((e) => e.toJson()).toList()),
+    );
+
+    final serverId = thread.serverId;
+    if (serverId == null) return;
+
+    try {
+      await _apiClient.delete(ApiEndpoints.threadDetail(serverId));
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+      await _syncQueue.enqueue(
+        entityType: 'forum_thread',
+        method: 'DELETE',
+        endpoint: ApiEndpoints.threadDetail(serverId),
+        payload: const {},
+      );
+    }
+  }
+
   // ==========================================
-  // POSTS (REPLIES)
+  // POSTS (TOP-LEVEL & NESTED REPLIES)
   // ==========================================
 
   Future<ForumPost> createPost({
     required String threadId,
     required String content,
     String? parentPostId,
+    String parentAuthorUsername = '',
     int? authorId,
     String authorName = '',
     String authorRole = '',
@@ -384,6 +473,7 @@ class ForumRepository {
         authorName: authorName,
         authorRole: authorRole,
         parentPostId: parentPostId,
+        parentAuthorUsername: parentAuthorUsername,
         isPendingSync: true,
       );
 
@@ -393,11 +483,84 @@ class ForumRepository {
         endpoint: ApiEndpoints.posts,
         payload: payload,
         tempClientId: tempId,
-        primaryKeyField: 'id',
+        primaryKeyField: 'post_id',
         dependsOnTempIds: deps,
       );
       await _appendPostToThread(threadId, draft);
       return draft;
+    }
+  }
+
+  Future<ForumPost> updatePost({
+    required String threadId,
+    required ForumPost post,
+    required String content,
+  }) async {
+    final payload = <String, dynamic>{'content': content.trim()};
+    final serverId = post.serverId;
+
+    if (serverId == null) {
+      final updated = post.copyWith(
+        content: content.trim(),
+        isPendingSync: true,
+      );
+      await _replacePostInThread(threadId, updated);
+      return updated;
+    }
+
+    try {
+      final response = await _apiClient.patch(
+        '${ApiEndpoints.posts}$serverId/',
+        body: payload,
+      );
+      final updated = ForumPost.fromJson(response as Map<String, dynamic>);
+      await _replacePostInThread(threadId, updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+      final updated = post.copyWith(
+        content: content.trim(),
+        isPendingSync: true,
+      );
+      await _syncQueue.enqueue(
+        entityType: 'forum_post',
+        method: 'PATCH',
+        endpoint: '${ApiEndpoints.posts}$serverId/',
+        payload: payload,
+      );
+      await _replacePostInThread(threadId, updated);
+      return updated;
+    }
+  }
+
+  Future<void> deletePost({
+    required String threadId,
+    required ForumPost post,
+  }) async {
+    final existing = getCachedThreadDetail(threadId);
+    if (existing != null) {
+      final filtered = existing.posts.where((p) => p.id != post.id).toList();
+      await _saveThreadDetailCache(
+        existing.copyWith(
+          posts: filtered,
+          postCount: filtered.length,
+        ),
+      );
+    }
+
+    final serverId = post.serverId;
+    if (serverId == null) return;
+
+    try {
+      await _apiClient.delete('${ApiEndpoints.posts}$serverId/');
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+      await _syncQueue.enqueue(
+        entityType: 'forum_post',
+        method: 'DELETE',
+        endpoint: '${ApiEndpoints.posts}$serverId/',
+        payload: const {},
+      );
     }
   }
 
@@ -411,11 +574,20 @@ class ForumRepository {
     await _saveThreadDetailCache(updated);
   }
 
+  Future<void> _replacePostInThread(String threadId, ForumPost updatedPost) async {
+    final existing = getCachedThreadDetail(threadId);
+    if (existing == null) return;
+    final posts = existing.posts
+        .map((p) => p.id == updatedPost.id ? updatedPost : p)
+        .toList();
+    await _saveThreadDetailCache(existing.copyWith(posts: posts));
+  }
+
   // ==========================================
-  // MODERATION ACTIONS (`CHECKER` & `ADMIN`)
+  // MODERATION ACTIONS (`ADMIN`, `CHECKER`, & `LP AUTHOR`)
   // ==========================================
 
-  /// `POST /api/v1/forums/forums/{id}/toggle-lock/`[cite: 3]
+  /// `POST /api/v1/forums/forums/{id}/toggle-lock/`[cite: 6, 11]
   Future<Forum> toggleForumLock(int forumServerId) async {
     final response =
         await _apiClient.post(ApiEndpoints.forumToggleLock(forumServerId));
@@ -424,7 +596,7 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/threads/{id}/moderate/`[cite: 3]
+  /// `POST /api/v1/forums/threads/{id}/moderate/`[cite: 6, 11]
   Future<ForumThread> moderateThread({
     required int threadServerId,
     bool? isPinned,
@@ -446,7 +618,7 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/posts/{id}/toggle-hide/`[cite: 3]
+  /// `POST /api/v1/forums/posts/{id}/toggle-hide/`[cite: 6, 11]
   Future<ForumPost> toggleHidePost({
     required String threadId,
     required int postServerId,
@@ -454,14 +626,7 @@ class ForumRepository {
     final response =
         await _apiClient.post(ApiEndpoints.postToggleHide(postServerId));
     final updated = ForumPost.fromJson(response as Map<String, dynamic>);
-
-    final existing = getCachedThreadDetail(threadId);
-    if (existing != null) {
-      final posts = existing.posts
-          .map((p) => p.id == updated.id ? updated : p)
-          .toList();
-      await _saveThreadDetailCache(existing.copyWith(posts: posts));
-    }
+    await _replacePostInThread(threadId, updated);
     return updated;
   }
 }

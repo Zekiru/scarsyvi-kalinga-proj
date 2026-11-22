@@ -23,9 +23,7 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
     super.dispose();
   }
 
-  Future<void> _showCreateForumDialog() async {
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
+  Future<void> _showOpenLessonPlanForumDialog() async {
     final formKey = GlobalKey<FormState>();
 
     List<LessonPlan> plans = const [];
@@ -34,96 +32,107 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
     } catch (_) {}
 
     if (!mounted) return;
-    LessonPlan? selectedPlan;
 
-    final created = await showDialog<Forum>(
+    if (plans.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Create or sync a Lesson Plan first before opening a discussion forum.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    LessonPlan selectedPlan = plans.first;
+    bool isSubmitting = false;
+
+    final opened = await showDialog<Forum>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Create Discussion Forum'),
+          title: const Text('Open Lesson Plan Forum'),
           content: SizedBox(
-            width: 440,
+            width: 460,
             child: Form(
               key: formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextFormField(
-                    controller: titleCtrl,
+                  Text(
+                    'Select a Lesson Plan to open or initialize its dedicated discussion workspace.',
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<LessonPlan>(
+                    initialValue: selectedPlan,
+                    isExpanded: true,
                     decoration: const InputDecoration(
-                      labelText: 'Forum Title',
+                      labelText: 'Lesson Plan',
                       border: OutlineInputBorder(),
                     ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Description / Topic Scope',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  if (plans.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<LessonPlan?>(
-                      initialValue: selectedPlan,
-                      decoration: const InputDecoration(
-                        labelText: 'Linked Lesson Plan (Optional)',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: [
-                        const DropdownMenuItem<LessonPlan?>(
-                          value: null,
-                          child: Text('General Community Forum'),
-                        ),
-                        ...plans.map(
-                          (lp) => DropdownMenuItem<LessonPlan?>(
+                    items: plans
+                        .map(
+                          (lp) => DropdownMenuItem<LessonPlan>(
                             value: lp,
                             child: Text(
-                              lp.title,
+                              lp.subject.isNotEmpty
+                                  ? '${lp.title} (${lp.subject})'
+                                  : lp.title,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                      ],
-                      onChanged: (val) => setState(() => selectedPlan = val),
-                    ),
-                  ],
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => selectedPlan = val);
+                    },
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: () async {
-                if (!(formKey.currentState?.validate() ?? false)) return;
-                final forum =
-                    await ref.read(forumsProvider.notifier).createForum(
-                          title: titleCtrl.text,
-                          description: descCtrl.text,
-                          lessonPlanId: selectedPlan?.id,
-                          lessonPlanTitle: selectedPlan?.title ?? '',
-                        );
-                if (ctx.mounted) Navigator.pop(ctx, forum);
-              },
-              child: const Text('Create'),
+            FilledButton.icon(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      setState(() => isSubmitting = true);
+                      try {
+                        final forum = await ref
+                            .read(forumsProvider.notifier)
+                            .openOrCreateForumForLessonPlan(
+                              lessonPlanId: selectedPlan.id,
+                              lessonPlanTitle: selectedPlan.title,
+                            );
+                        if (ctx.mounted) Navigator.pop(ctx, forum);
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text('Failed to open forum: $e')),
+                          );
+                        }
+                      } finally {
+                        if (ctx.mounted) setState(() => isSubmitting = false);
+                      }
+                    },
+              icon: const Icon(Icons.forum_outlined, size: 18),
+              label: Text(isSubmitting ? 'Opening...' : 'Open Forum'),
             ),
           ],
         ),
       ),
     );
 
-    if (created != null && mounted) {
+    if (opened != null && mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ForumThreadsScreen(forum: created),
+          builder: (_) => ForumThreadsScreen(forum: opened),
         ),
       );
     }
@@ -132,6 +141,8 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
   @override
   Widget build(BuildContext context) {
     final forumsAsync = ref.watch(forumsProvider);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return Scaffold(
       body: Column(
@@ -141,7 +152,7 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
             child: TextField(
               controller: _searchCtrl,
               decoration: InputDecoration(
-                hintText: 'Search forums...',
+                hintText: 'Search lesson plan forums...',
                 prefixIcon: const Icon(Icons.search),
                 border: const OutlineInputBorder(),
                 suffixIcon: _searchCtrl.text.isNotEmpty
@@ -180,70 +191,42 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
               ),
               data: (forums) {
                 if (forums.isEmpty) {
-                  return const Center(
-                    child: Text('No forums yet. Tap + to start a discussion.'),
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.forum_outlined,
+                            size: 48,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No lesson plan forums active yet.\nTap "Open Forum" to start a discussion for a lesson plan.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 }
 
                 return RefreshIndicator(
                   onRefresh: () => ref.read(forumsProvider.notifier).refresh(),
                   child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                     itemCount: forums.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final forum = forums[index];
+                      final isModerator =
+                          ref.watch(forumModeratorProvider(forum.lessonPlanId));
+
                       return Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Icon(
-                              forum.isLocked
-                                  ? Icons.lock_outline
-                                  : Icons.forum_outlined,
-                            ),
-                          ),
-                          title: Text(
-                            forum.title,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (forum.description.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    forum.description,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              if (forum.lessonPlanTitle.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    'Lesson Plan: ${forum.lessonPlanTitle}',
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          trailing: Wrap(
-                            spacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              if (forum.isPendingSync || forum.isLocalDraft)
-                                const Chip(label: Text('Queued'))
-                              else if (forum.isLocked)
-                                const Chip(label: Text('Locked')),
-                              const Icon(Icons.chevron_right),
-                            ],
-                          ),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
@@ -252,6 +235,125 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
                               ),
                             );
                           },
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: forum.isLocked
+                                          ? colors.errorContainer
+                                          : colors.primaryContainer,
+                                      child: Icon(
+                                        forum.isLocked
+                                            ? Icons.lock_outline
+                                            : Icons.forum_outlined,
+                                        color: forum.isLocked
+                                            ? colors.onErrorContainer
+                                            : colors.onPrimaryContainer,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            forum.displayTitle,
+                                            style: theme.textTheme.titleMedium
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (forum.description.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              forum.description,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (isModerator)
+                                      IconButton(
+                                        tooltip: 'Delete Forum',
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 20,
+                                        ),
+                                        onPressed: () async {
+                                          final confirmed =
+                                              await showDialog<bool>(
+                                            context: context,
+                                            builder: (ctx) => AlertDialog(
+                                              title: const Text('Delete Forum?'),
+                                              content: Text(
+                                                'Delete the discussion forum for "${forum.displayTitle}" and all its threads?',
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, false),
+                                                  child: const Text('Cancel'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, true),
+                                                  child: const Text('Delete'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirmed == true) {
+                                            await ref
+                                                .read(forumsProvider.notifier)
+                                                .deleteForum(forum.id);
+                                          }
+                                        },
+                                      ),
+                                    const Icon(Icons.chevron_right),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    Chip(
+                                      avatar: const Icon(
+                                        Icons.chat_bubble_outline,
+                                        size: 16,
+                                      ),
+                                      label: Text(
+                                        '${forum.threadCount} ${forum.threadCount == 1 ? 'thread' : 'threads'}',
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    if (forum.isLocked)
+                                      const Chip(
+                                        avatar: Icon(Icons.lock, size: 16),
+                                        label: Text('Locked'),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    if (forum.isPendingSync ||
+                                        forum.isLocalDraft)
+                                      const Chip(
+                                        avatar: Icon(Icons.sync, size: 16),
+                                        label: Text('Pending Sync'),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -263,9 +365,9 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateForumDialog,
+        onPressed: _showOpenLessonPlanForumDialog,
         icon: const Icon(Icons.add_comment_outlined),
-        label: const Text('New Forum'),
+        label: const Text('Open Forum'),
       ),
     );
   }

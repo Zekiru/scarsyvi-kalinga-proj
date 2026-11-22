@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
 import '../../curriculum/data/curriculum_models.dart';
+import '../../curriculum/presentation/lesson_plan_detail_screen.dart';
 import '../../curriculum/providers/curriculum_provider.dart';
+import '../../forums/presentation/forum_threads_screen.dart';
+import '../../forums/providers/forum_provider.dart';
 import '../data/classroom_models.dart';
 import '../data/classroom_repository.dart';
 import '../providers/classroom_provider.dart';
@@ -17,6 +20,45 @@ class ClassroomDetailScreen extends ConsumerWidget {
   });
 
   final String classroomId;
+
+  void _openLinkedLessonPlan(BuildContext context, String lessonPlanId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LessonPlanDetailScreen(lessonPlanId: lessonPlanId),
+      ),
+    );
+  }
+
+  Future<void> _openLinkedLessonPlanForum(
+    BuildContext context,
+    WidgetRef ref,
+    Classroom classroom,
+  ) async {
+    final lpId = classroom.lessonPlanId;
+    if (lpId == null || lpId.isEmpty) return;
+
+    try {
+      final forum = await ref
+          .read(forumsProvider.notifier)
+          .openOrCreateForumForLessonPlan(
+            lessonPlanId: lpId,
+            lessonPlanTitle: classroom.lessonPlanTitle,
+          );
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ForumThreadsScreen(forum: forum),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open forum: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,6 +82,8 @@ class ClassroomDetailScreen extends ConsumerWidget {
             (currentUser != null &&
                 classroom.adviserId != null &&
                 classroom.adviserId == currentUser.id);
+        final hasLinkedLessonPlan = classroom.lessonPlanId != null &&
+            classroom.lessonPlanId!.isNotEmpty;
 
         return DefaultTabController(
           length: 3,
@@ -52,20 +96,51 @@ class ClassroomDetailScreen extends ConsumerWidget {
                   if (classroom.section.isNotEmpty ||
                       classroom.schoolYear.isNotEmpty ||
                       classroom.lessonPlanTitle.isNotEmpty)
-                    Text(
-                      [
-                        if (classroom.section.isNotEmpty)
-                          'Section ${classroom.section}',
-                        if (classroom.schoolYear.isNotEmpty)
-                          'SY ${classroom.schoolYear}',
-                        if (classroom.lessonPlanTitle.isNotEmpty)
-                          classroom.lessonPlanTitle,
-                      ].join(' • '),
-                      style: Theme.of(context).textTheme.bodySmall,
+                    InkWell(
+                      onTap: hasLinkedLessonPlan
+                          ? () => _openLinkedLessonPlan(
+                                context,
+                                classroom.lessonPlanId!,
+                              )
+                          : null,
+                      child: Text(
+                        [
+                          if (classroom.section.isNotEmpty)
+                            'Section ${classroom.section}',
+                          if (classroom.schoolYear.isNotEmpty)
+                            'SY ${classroom.schoolYear}',
+                          if (classroom.lessonPlanTitle.isNotEmpty)
+                            'LP: ${classroom.lessonPlanTitle}',
+                        ].join(' • '),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: hasLinkedLessonPlan
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                              decoration: hasLinkedLessonPlan
+                                  ? TextDecoration.underline
+                                  : null,
+                            ),
+                      ),
                     ),
                 ],
               ),
               actions: [
+                if (hasLinkedLessonPlan) ...[
+                  IconButton(
+                    tooltip: 'Open Linked Lesson Plan',
+                    icon: const Icon(Icons.menu_book_outlined),
+                    onPressed: () => _openLinkedLessonPlan(
+                      context,
+                      classroom.lessonPlanId!,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Discuss Lesson Plan in Forum',
+                    icon: const Icon(Icons.forum_outlined),
+                    onPressed: () =>
+                        _openLinkedLessonPlanForum(context, ref, classroom),
+                  ),
+                ],
                 if (canManage) ...[
                   IconButton(
                     tooltip: 'Edit Classroom',

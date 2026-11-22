@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
+import '../../curriculum/providers/curriculum_provider.dart';
 import '../data/forum_models.dart';
 import '../data/forum_repository.dart';
 
@@ -37,25 +38,70 @@ class ForumsNotifier extends AsyncNotifier<List<Forum>> {
     }
   }
 
-  Future<Forum> createForum({
-    required String title,
-    String description = '',
-    String? lessonPlanId,
+  /// Idempotently initializes or fetches a LessonPlanForum via
+  /// `POST /api/v1/forums/forums/by-lesson-plan/`.
+  Future<Forum> openOrCreateForumForLessonPlan({
+    required String lessonPlanId,
     String lessonPlanTitle = '',
   }) async {
     final repo = ref.read(forumRepositoryProvider);
-    final created = await repo.createForum(
-      title: title,
-      description: description,
+    final forum = await repo.getOrCreateForumForLessonPlan(
       lessonPlanId: lessonPlanId,
       lessonPlanTitle: lessonPlanTitle,
     );
     ref.read(syncStatusProvider.notifier).refreshCounts();
+
     final current = state.value ?? const [];
-    state = AsyncData([created, ...current]);
-    return created;
+    final idx = current.indexWhere(
+      (f) =>
+          f.id == forum.id ||
+          (forum.lessonPlanId != null &&
+              forum.lessonPlanId!.isNotEmpty &&
+              f.lessonPlanId == forum.lessonPlanId),
+    );
+    if (idx >= 0) {
+      final updated = [...current];
+      updated[idx] = forum;
+      state = AsyncData(updated);
+    } else {
+      state = AsyncData([forum, ...current]);
+    }
+    return forum;
+  }
+
+  Future<void> deleteForum(String forumId) async {
+    final repo = ref.read(forumRepositoryProvider);
+    await repo.deleteForum(forumId);
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    final current = state.value ?? const [];
+    state = AsyncData(current.where((f) => f.id != forumId).toList());
   }
 }
+
+/// Evaluates whether the current user is a Forum Moderator for `lessonPlanId`:
+/// - `ADMIN` or `CHECKER` (via `currentUser.canModerate`), OR
+/// - An assigned author (`LpAuthor`) of the linked `LessonPlan`.
+final forumModeratorProvider =
+    Provider.family<bool, String?>((ref, lessonPlanId) {
+  final currentUser = ref.watch(currentUserProvider);
+  if (currentUser == null) return false;
+  if (currentUser.canModerate) return true;
+
+  if (lessonPlanId == null || lessonPlanId.isEmpty) return false;
+  final planAsync = ref.watch(lessonPlanDetailProvider(lessonPlanId));
+  final plan = planAsync.value;
+  if (plan != null) {
+    return plan.authorIds.contains(currentUser.id);
+  }
+
+  final plansList = ref.watch(lessonPlansProvider).value ?? const [];
+  final matchingPlan =
+      plansList.where((p) => p.id == lessonPlanId).firstOrNull;
+  if (matchingPlan != null) {
+    return matchingPlan.authorIds.contains(currentUser.id);
+  }
+  return false;
+});
 
 final forumThreadsProvider =
     FutureProvider.family<List<ForumThread>, String>((ref, forumId) async {
@@ -72,12 +118,14 @@ final forumReplyHelperProvider = Provider((ref) {
     required String threadId,
     required String content,
     String? parentPostId,
+    String parentAuthorUsername = '',
   }) async {
     final user = ref.read(currentUserProvider);
     final post = await ref.read(forumRepositoryProvider).createPost(
           threadId: threadId,
           content: content,
           parentPostId: parentPostId,
+          parentAuthorUsername: parentAuthorUsername,
           authorId: user?.id,
           authorName: user?.username ?? '',
           authorRole: user?.role.apiValue ?? '',

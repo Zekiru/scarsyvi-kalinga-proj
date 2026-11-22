@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
+import '../../forums/presentation/forum_threads_screen.dart';
+import '../../forums/providers/forum_provider.dart';
 import '../data/curriculum_models.dart';
 import '../data/curriculum_repository.dart';
 import '../providers/curriculum_provider.dart';
@@ -20,6 +22,34 @@ class LessonPlanDetailScreen extends ConsumerWidget {
   });
 
   final String lessonPlanId;
+
+  Future<void> _openForum(
+    BuildContext context,
+    WidgetRef ref,
+    LessonPlan plan,
+  ) async {
+    try {
+      final forum = await ref
+          .read(forumsProvider.notifier)
+          .openOrCreateForumForLessonPlan(
+            lessonPlanId: plan.id,
+            lessonPlanTitle: plan.title,
+          );
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ForumThreadsScreen(forum: forum),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open forum: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _confirmDelete(
     BuildContext context,
@@ -133,6 +163,11 @@ class LessonPlanDetailScreen extends ConsumerWidget {
                 ],
               ),
               actions: [
+                IconButton(
+                  tooltip: 'Discuss in Forum',
+                  icon: const Icon(Icons.forum_outlined),
+                  onPressed: () => _openForum(context, ref, plan),
+                ),
                 if (canEdit)
                   IconButton(
                     tooltip: 'Edit Lesson Plan',
