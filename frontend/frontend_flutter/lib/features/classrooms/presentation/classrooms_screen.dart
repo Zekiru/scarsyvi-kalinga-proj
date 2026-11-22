@@ -1,104 +1,270 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../accounts/providers/auth_provider.dart';
+import '../../curriculum/data/curriculum_models.dart';
+import '../../curriculum/providers/curriculum_provider.dart';
 import '../data/classroom_models.dart';
 import '../providers/classroom_provider.dart';
 import 'classroom_detail_screen.dart';
 
-class ClassroomsScreen extends ConsumerWidget {
-  const ClassroomsScreen({super.key});
+Future<Classroom?> showClassroomFormDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  Classroom? existing,
+}) async {
+  final nameCtrl = TextEditingController(text: existing?.name ?? '');
+  final schoolCtrl = TextEditingController(text: existing?.schoolName ?? '');
+  final sectionCtrl = TextEditingController(text: existing?.section ?? '');
+  final syCtrl = TextEditingController(
+    text: existing?.schoolYear.isNotEmpty == true
+        ? existing!.schoolYear
+        : '2026-2027',
+  );
+  final formKey = GlobalKey<FormState>();
 
-  Future<void> _showCreateClassroomDialog(
-    BuildContext context,
-    WidgetRef ref,
-  ) async {
-    final nameCtrl = TextEditingController();
-    final sectionCtrl = TextEditingController();
-    final syCtrl = TextEditingController(text: '2026-2027');
-    final descCtrl = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+  List<GradeLevel> availableLevels = const [];
+  List<LessonPlan> availablePlans = const [];
+  try {
+    availableLevels = await ref.read(gradeLevelsProvider.future);
+  } catch (_) {}
+  try {
+    availablePlans = await ref.read(lessonPlansProvider.future);
+  } catch (_) {}
 
-    final created = await showDialog<Classroom>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Create Classroom'),
+  if (!context.mounted) return null;
+
+  final selectedGradeIds = <int>{...existing?.gradeLevelIds ?? const []};
+  String? selectedLessonPlanId = existing?.lessonPlanId;
+  bool isActive = existing?.isActive ?? true;
+  bool isSaving = false;
+
+  return showDialog<Classroom>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        title: Text(existing == null ? 'Create Classroom' : 'Edit Classroom'),
         content: SizedBox(
-          width: 420,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Class / Subject Name (e.g. Grade 7 Science)',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: sectionCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Section (e.g. Rizal)',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
+          width: 480,
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText:
+                          'Classroom Name (e.g. Grades 1 & 2 Multigrade - Acacia)',
+                      border: OutlineInputBorder(),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: syCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'School Year',
-                          border: OutlineInputBorder(),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: schoolCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'School Name (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: sectionCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Section (e.g. Acacia)',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: syCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'School Year',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (availableLevels.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Multigrade Levels',
+                      style: Theme.of(ctx).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: availableLevels.map((gl) {
+                        final selected = selectedGradeIds.contains(gl.id);
+                        return FilterChip(
+                          label: Text(gl.name),
+                          selected: selected,
+                          onSelected: (val) {
+                            setState(() {
+                              if (val) {
+                                selectedGradeIds.add(gl.id);
+                              } else {
+                                selectedGradeIds.remove(gl.id);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
                     ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: descCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes / Room Location (Optional)',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String?>(
+                    initialValue: availablePlans.any(
+                      (p) => p.id == selectedLessonPlanId,
+                    )
+                        ? selectedLessonPlanId
+                        : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Active Lesson Plan (for Gradebook)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('None selected'),
+                      ),
+                      ...availablePlans.map(
+                        (p) => DropdownMenuItem<String?>(
+                          value: p.id,
+                          child: Text(
+                            p.subject.isNotEmpty
+                                ? '${p.title} (${p.subject})'
+                                : p.title,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) =>
+                        setState(() => selectedLessonPlanId = val),
                   ),
-                ),
-              ],
+                  if (existing != null) ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Active Classroom'),
+                      value: isActive,
+                      onChanged: (val) => setState(() => isActive = val),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: isSaving ? null : () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () async {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              final classroom = await ref
-                  .read(classroomsProvider.notifier)
-                  .createClassroom(
-                    name: nameCtrl.text,
-                    section: sectionCtrl.text,
-                    schoolYear: syCtrl.text,
-                  );
-              if (ctx.mounted) Navigator.pop(ctx, classroom);
-            },
-            child: const Text('Create'),
+            onPressed: isSaving
+                ? null
+                : () async {
+                    if (!(formKey.currentState?.validate() ?? false)) return;
+                    setState(() => isSaving = true);
+                    try {
+                      final orderedIds = selectedGradeIds.toList()..sort();
+                      final names = orderedIds
+                          .map(
+                            (id) => availableLevels
+                                .where((g) => g.id == id)
+                                .map((g) => g.name)
+                                .firstOrNull,
+                          )
+                          .whereType<String>()
+                          .toList();
+                      final selectedPlan = selectedLessonPlanId == null
+                          ? null
+                          : availablePlans
+                              .where((p) => p.id == selectedLessonPlanId)
+                              .firstOrNull;
+
+                      final Classroom result;
+                      if (existing == null) {
+                        result = await ref
+                            .read(classroomsProvider.notifier)
+                            .createClassroom(
+                              name: nameCtrl.text,
+                              schoolName: schoolCtrl.text,
+                              section: sectionCtrl.text,
+                              schoolYear: syCtrl.text,
+                              gradeLevelIds: orderedIds,
+                              gradeLevelNames: names,
+                              lessonPlanId: selectedLessonPlanId,
+                              lessonPlanTitle: selectedPlan?.title ?? '',
+                            );
+                      } else {
+                        result = await ref
+                            .read(classroomsProvider.notifier)
+                            .updateClassroom(
+                              classroomId: existing.id,
+                              name: nameCtrl.text,
+                              schoolName: schoolCtrl.text,
+                              section: sectionCtrl.text,
+                              schoolYear: syCtrl.text,
+                              isActive: isActive,
+                              gradeLevelIds: orderedIds,
+                              gradeLevelNames: names,
+                              lessonPlanId: selectedLessonPlanId,
+                              lessonPlanTitle: selectedPlan?.title ?? '',
+                            );
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx, result);
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Failed to save: $e')),
+                        );
+                      }
+                    } finally {
+                      if (ctx.mounted) setState(() => isSaving = false);
+                    }
+                  },
+            child: Text(existing == null ? 'Create' : 'Save'),
           ),
         ],
       ),
-    );
+    ),
+  );
+}
 
-    if (created != null && context.mounted) {
+class ClassroomsScreen extends ConsumerStatefulWidget {
+  const ClassroomsScreen({super.key});
+
+  @override
+  ConsumerState<ClassroomsScreen> createState() => _ClassroomsScreenState();
+}
+
+class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onCreatePressed() async {
+    final created = await showClassroomFormDialog(context, ref);
+    if (created != null && mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ClassroomDetailScreen(classroomId: created.id),
@@ -107,87 +273,303 @@ class ClassroomsScreen extends ConsumerWidget {
     }
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final classroomsAsync = ref.watch(classroomsProvider);
+  bool _isMyClassroom(Classroom cls, int? currentUserId) {
+    if (cls.isLocalDraft) return true;
+    return currentUserId != null &&
+        cls.adviserId != null &&
+        cls.adviserId == currentUserId;
+  }
 
-    return Scaffold(
-      body: classroomsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Failed to load classrooms: $err'),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () =>
-                    ref.read(classroomsProvider.notifier).refresh(),
-                child: const Text('Retry'),
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required int count,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: colors.primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colors.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$count',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colors.onPrimaryContainer,
               ),
-            ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClassroomCard(
+    BuildContext context,
+    Classroom cls, {
+    required bool isAdviser,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final subtitleParts = <String>[
+      if (cls.schoolName.isNotEmpty) cls.schoolName,
+      if (cls.section.isNotEmpty) 'Section ${cls.section}',
+      if (cls.schoolYear.isNotEmpty) 'SY ${cls.schoolYear}',
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ClassroomDetailScreen(classroomId: cls.id),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: isAdviser
+                          ? colors.primaryContainer
+                          : colors.secondaryContainer,
+                      child: Icon(
+                        Icons.class_outlined,
+                        color: isAdviser
+                            ? colors.onPrimaryContainer
+                            : colors.onSecondaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cls.name,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (subtitleParts.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              subtitleParts.join(' • '),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                          if (cls.adviserName.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              isAdviser
+                                  ? 'Adviser: ${cls.adviserName} (You)'
+                                  : 'Adviser: ${cls.adviserName}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: isAdviser
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                                fontWeight: isAdviser
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Chip(
+                      avatar: const Icon(
+                        Icons.people_outline,
+                        size: 16,
+                      ),
+                      label: Text(
+                        '${cls.effectiveStudentCount} ${cls.effectiveStudentCount == 1 ? 'student' : 'students'}',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    ...cls.gradeLevelNames.map(
+                      (name) => Chip(
+                        label: Text(name),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    if (cls.lessonPlanTitle.isNotEmpty)
+                      Chip(
+                        avatar: const Icon(
+                          Icons.menu_book_outlined,
+                          size: 16,
+                        ),
+                        label: Text(cls.lessonPlanTitle),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    if (cls.isPendingSync || cls.isLocalDraft)
+                      const Chip(
+                        avatar: Icon(Icons.sync, size: 16),
+                        label: Text('Pending Sync'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-        data: (classrooms) {
-          if (classrooms.isEmpty) {
-            return const Center(
-              child: Text('No classrooms yet. Tap + to create your first class.'),
-            );
-          }
+      ),
+    );
+  }
 
-          return RefreshIndicator(
-            onRefresh: () => ref.read(classroomsProvider.notifier).refresh(),
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: classrooms.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final cls = classrooms[index];
-                final subtitleParts = <String>[
-                  if (cls.section.isNotEmpty) 'Section ${cls.section}',
-                  if (cls.schoolYear.isNotEmpty) 'SY ${cls.schoolYear}',
-                  '${cls.students.length} students',
-                ];
+  @override
+  Widget build(BuildContext context) {
+    final classroomsAsync = ref.watch(classroomsProvider);
+    final currentUser = ref.watch(currentUserProvider);
 
-                return Card(
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.class_outlined),
+    return Scaffold(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search classrooms by name, school, or section...',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          ref
+                              .read(classroomsProvider.notifier)
+                              .refresh(search: '');
+                          setState(() {});
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (val) {
+                setState(() {});
+                ref.read(classroomsProvider.notifier).refresh(search: val);
+              },
+            ),
+          ),
+          Expanded(
+            child: classroomsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Failed to load classrooms: $err'),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () =>
+                          ref.read(classroomsProvider.notifier).refresh(),
+                      child: const Text('Retry'),
                     ),
-                    title: Text(
-                      cls.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                  ],
+                ),
+              ),
+              data: (classrooms) {
+                if (classrooms.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No classrooms yet. Tap + to create your first class.',
                     ),
-                    subtitle: Text(subtitleParts.join(' • ')),
-                    trailing: Wrap(
-                      spacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (cls.isPendingSync || cls.isLocalDraft)
-                          const Chip(
-                            label: Text('Queued'),
-                            avatar: Icon(Icons.schedule, size: 16),
-                          ),
-                        const Icon(Icons.chevron_right),
-                      ],
-                    ),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              ClassroomDetailScreen(classroomId: cls.id),
+                  );
+                }
+
+                final myClassrooms = classrooms
+                    .where((c) => _isMyClassroom(c, currentUser?.id))
+                    .toList();
+                final otherClassrooms = classrooms
+                    .where((c) => !_isMyClassroom(c, currentUser?.id))
+                    .toList();
+
+                return RefreshIndicator(
+                  onRefresh: () =>
+                      ref.read(classroomsProvider.notifier).refresh(),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                    children: [
+                      if (myClassrooms.isNotEmpty) ...[
+                        _buildSectionHeader(
+                          context,
+                          icon: Icons.school_outlined,
+                          title: 'My Classrooms',
+                          count: myClassrooms.length,
                         ),
-                      );
-                    },
+                        ...myClassrooms.map(
+                          (cls) => _buildClassroomCard(
+                            context,
+                            cls,
+                            isAdviser: true,
+                          ),
+                        ),
+                      ],
+                      if (otherClassrooms.isNotEmpty) ...[
+                        if (myClassrooms.isNotEmpty)
+                          const Divider(height: 24),
+                        _buildSectionHeader(
+                          context,
+                          icon: Icons.groups_outlined,
+                          title: 'Other Classrooms',
+                          count: otherClassrooms.length,
+                        ),
+                        ...otherClassrooms.map(
+                          (cls) => _buildClassroomCard(
+                            context,
+                            cls,
+                            isAdviser: false,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 );
               },
             ),
-          );
-        },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateClassroomDialog(context, ref),
+        onPressed: _onCreatePressed,
         icon: const Icon(Icons.add),
         label: const Text('New Class'),
       ),

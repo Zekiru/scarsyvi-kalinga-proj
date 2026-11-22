@@ -1,4 +1,7 @@
 import 'dart:convert';
+import '../../curriculum/data/models/json_parsers.dart';
+
+typedef JsonMap = Map<String, dynamic>;
 
 enum AttendanceStatus {
   present('PRESENT', 'Present'),
@@ -39,31 +42,37 @@ class Student {
     this.isPendingSync = false,
   });
 
-  final String id; // Stringified server PK or `temp_stu_*`
+  final String id;
   final String firstName;
   final String lastName;
-  final String gender; // 'M', 'F', or ''
+  final String gender;
   final String lrn;
   final int? gradeLevelId;
   final String gradeLevelName;
-  final double? gradeAverage; // Computed by selectors.py (0-100)[cite: 1]
-  final double? attendanceAverage; // Computed by selectors.py (0-100)[cite: 1]
+  final double? gradeAverage;
+  final double? attendanceAverage;
   final bool isPendingSync;
 
   String get fullName => '$firstName $lastName'.trim();
   String get formalName =>
       lastName.isNotEmpty ? '$lastName, $firstName' : firstName;
 
-  factory Student.fromJson(Map<String, dynamic> json) {
+  factory Student.fromJson(JsonMap json) {
     final glObj = json['grade_level_detail'] ?? json['grade_level'];
     int? glId;
-    String glName = (json['grade_level_name'] ?? '') as String;
+    String glName = asString(json['grade_level_name']);
 
-    if (glObj is int) {
-      glId = glObj;
-    } else if (glObj is Map<String, dynamic>) {
-      glId = (glObj['id'] ?? glObj['grade_level_id']) as int?;
-      glName = (glObj['name'] ?? glObj['grade_name'] ?? glName) as String;
+    if (glObj is Map) {
+      final glMap = JsonMap.from(glObj);
+      glId = asNullableInt(
+        glMap['gl_id'] ?? glMap['id'] ?? glMap['grade_level_id'],
+      );
+      glName = asString(
+        glMap['grade_level_name'] ?? glMap['name'] ?? glMap['grade_name'],
+        glName,
+      );
+    } else {
+      glId = asNullableInt(glObj);
     }
 
     double? parseNullableDouble(dynamic val) {
@@ -72,22 +81,25 @@ class Student {
       return double.tryParse(val.toString());
     }
 
+    final numericId = asNullableInt(json['student_id'] ?? json['id']);
+    final rawId = json['student_id'] ?? json['id'];
+
     return Student(
-      id: (json['student_id'] ?? json['id'] ?? '').toString(),
-      firstName: (json['first_name'] ?? '') as String,
-      lastName: (json['last_name'] ?? '') as String,
-      gender: (json['gender'] ?? '') as String,
-      lrn: (json['lrn'] ?? '') as String,
+      id: numericId?.toString() ?? asString(rawId),
+      firstName: asString(json['first_name']),
+      lastName: asString(json['last_name']),
+      gender: asString(json['gender']),
+      lrn: asString(json['lrn']),
       gradeLevelId: glId,
       gradeLevelName: glName,
       gradeAverage: parseNullableDouble(json['grade_average']),
       attendanceAverage: parseNullableDouble(json['attendance_average']),
-      isPendingSync: (json['is_pending_sync'] ?? false) as bool,
+      isPendingSync: asBool(json['is_pending_sync']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
+  JsonMap toJson() => {
+        'student_id': int.tryParse(id) ?? id,
         'first_name': firstName,
         'last_name': lastName,
         'gender': gender,
@@ -113,15 +125,16 @@ class StudentAttendanceEntry {
   final AttendanceStatus status;
   final String notes;
 
-  factory StudentAttendanceEntry.fromJson(Map<String, dynamic> json) {
+  factory StudentAttendanceEntry.fromJson(JsonMap json) {
     final stuObj = json['student_detail'] ?? json['student'];
     String sId = '';
-    String sName = (json['student_name'] ?? '') as String;
+    String sName = asString(json['student_name']);
 
-    if (stuObj is Map<String, dynamic>) {
-      sId = (stuObj['student_id'] ?? stuObj['id'] ?? '').toString();
-      final fn = (stuObj['first_name'] ?? '') as String;
-      final ln = (stuObj['last_name'] ?? '') as String;
+    if (stuObj is Map) {
+      final stuMap = JsonMap.from(stuObj);
+      sId = asIdString(stuMap['student_id'] ?? stuMap['id']);
+      final fn = asString(stuMap['first_name']);
+      final ln = asString(stuMap['last_name']);
       if (sName.isEmpty) sName = '$fn $ln'.trim();
     } else if (stuObj != null) {
       sId = stuObj.toString();
@@ -130,12 +143,12 @@ class StudentAttendanceEntry {
     return StudentAttendanceEntry(
       studentId: sId,
       studentName: sName,
-      status: AttendanceStatus.fromString(json['status'] as String?),
-      notes: (json['notes'] ?? '') as String,
+      status: AttendanceStatus.fromString(json['status']?.toString()),
+      notes: asString(json['notes']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'student': studentId,
         'student_name': studentName,
         'status': status.apiValue,
@@ -155,33 +168,44 @@ class AttendanceSession {
 
   final String id;
   final String classroomId;
-  final String date; // YYYY-MM-DD[cite: 1]
+  final String date;
   final String remarks;
   final List<StudentAttendanceEntry> records;
   final bool isPendingSync;
 
-  factory AttendanceSession.fromJson(Map<String, dynamic> json) {
+  int get presentCount =>
+      records.where((r) => r.status == AttendanceStatus.present).length;
+  int get lateCount =>
+      records.where((r) => r.status == AttendanceStatus.late).length;
+  int get absentCount =>
+      records.where((r) => r.status == AttendanceStatus.absent).length;
+  int get excusedCount =>
+      records.where((r) => r.status == AttendanceStatus.excused).length;
+
+  factory AttendanceSession.fromJson(JsonMap json) {
     final parsedRecords = <StudentAttendanceEntry>[];
     final rawRecs = json['records'] ?? json['attendances'];
     if (rawRecs is List) {
       for (final item in rawRecs) {
-        if (item is Map<String, dynamic>) {
-          parsedRecords.add(StudentAttendanceEntry.fromJson(item));
+        if (item is Map) {
+          parsedRecords.add(
+            StudentAttendanceEntry.fromJson(JsonMap.from(item)),
+          );
         }
       }
     }
 
     return AttendanceSession(
-      id: (json['session_id'] ?? json['id'] ?? '').toString(),
-      classroomId: (json['classroom'] ?? '').toString(),
-      date: (json['date'] ?? '') as String,
-      remarks: (json['remarks'] ?? '') as String,
+      id: asIdString(json['session_id'] ?? json['id']),
+      classroomId: asIdString(json['classroom']),
+      date: asString(json['date']),
+      remarks: asString(json['remarks']),
       records: parsedRecords,
-      isPendingSync: (json['is_pending_sync'] ?? false) as bool,
+      isPendingSync: asBool(json['is_pending_sync']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'id': id,
         'classroom': classroomId,
         'date': date,
@@ -201,28 +225,31 @@ class StudentGrade {
     required this.score,
     this.maxScore = 100.0,
     this.feedback = '',
+    this.submittedAt,
     this.isPendingSync = false,
   });
 
   final String id;
   final String studentId;
   final String studentName;
-  final String gradingTaskId; // PK or `temp_*` of curriculum.LessonGrading[cite: 1]
+  final String gradingTaskId;
   final String gradingTaskName;
   final double score;
   final double maxScore;
   final String feedback;
+  final String? submittedAt;
   final bool isPendingSync;
 
-  factory StudentGrade.fromJson(Map<String, dynamic> json) {
+  factory StudentGrade.fromJson(JsonMap json) {
     final stuObj = json['student_detail'] ?? json['student'];
     String sId = '';
-    String sName = (json['student_name'] ?? '') as String;
+    String sName = asString(json['student_name']);
 
-    if (stuObj is Map<String, dynamic>) {
-      sId = (stuObj['student_id'] ?? stuObj['id'] ?? '').toString();
-      final fn = (stuObj['first_name'] ?? '') as String;
-      final ln = (stuObj['last_name'] ?? '') as String;
+    if (stuObj is Map) {
+      final stuMap = JsonMap.from(stuObj);
+      sId = asIdString(stuMap['student_id'] ?? stuMap['id']);
+      final fn = asString(stuMap['first_name']);
+      final ln = asString(stuMap['last_name']);
       if (sName.isEmpty) sName = '$fn $ln'.trim();
     } else if (stuObj != null) {
       sId = stuObj.toString();
@@ -230,47 +257,52 @@ class StudentGrade {
 
     final taskObj = json['grading_task_detail'] ?? json['grading_task'];
     String tId = '';
-    String tName =
-        (json['grading_task_name'] ?? json['criteria_name'] ?? '') as String;
+    String tName = asString(
+      json['task_name'] ??
+          json['grading_task_name'] ??
+          json['criteria_name'],
+    );
     double maxVal = 100.0;
 
-    if (taskObj is Map<String, dynamic>) {
-      tId = (taskObj['lesson_grading_id'] ?? taskObj['id'] ?? '').toString();
-      tName = (taskObj['criteria_name'] ?? taskObj['title'] ?? tName) as String;
-      final rawMax = taskObj['max_score'] ?? taskObj['weight_percentage'];
-      if (rawMax is num) maxVal = rawMax.toDouble();
+    if (taskObj is Map) {
+      final taskMap = JsonMap.from(taskObj);
+      tId = asIdString(
+        taskMap['lg_id'] ?? taskMap['lesson_grading_id'] ?? taskMap['id'],
+      );
+      tName = asString(
+        taskMap['task_name'] ?? taskMap['criteria_name'] ?? taskMap['title'],
+        tName,
+      );
+      final rawMax = taskMap['max_score'];
+      if (rawMax != null) maxVal = asDouble(rawMax, maxVal);
     } else if (taskObj != null) {
       tId = taskObj.toString();
     }
 
-    double toDouble(dynamic val, double fallback) {
-      if (val is num) return val.toDouble();
-      if (val != null) return double.tryParse(val.toString()) ?? fallback;
-      return fallback;
-    }
-
     return StudentGrade(
-      id: (json['grade_id'] ?? json['id'] ?? '').toString(),
+      id: asIdString(json['grade_id'] ?? json['id']),
       studentId: sId,
       studentName: sName,
       gradingTaskId: tId,
       gradingTaskName: tName,
-      score: toDouble(json['score'], 0.0),
-      maxScore: toDouble(json['max_score'], maxVal),
-      feedback: (json['feedback'] ?? json['remarks'] ?? '') as String,
-      isPendingSync: (json['is_pending_sync'] ?? false) as bool,
+      score: asDouble(json['score']),
+      maxScore: asDouble(json['max_score'], maxVal),
+      feedback: asString(json['feedback'] ?? json['remarks']),
+      submittedAt: json['submitted_at']?.toString(),
+      isPendingSync: asBool(json['is_pending_sync']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  JsonMap toJson() => {
         'id': id,
         'student': studentId,
         'student_name': studentName,
         'grading_task': gradingTaskId,
-        'grading_task_name': gradingTaskName,
+        'task_name': gradingTaskName,
         'score': score,
         'max_score': maxScore,
         'feedback': feedback,
+        'submitted_at': submittedAt,
         'is_pending_sync': isPendingSync,
       };
 }
@@ -286,13 +318,15 @@ class Classroom {
     this.adviserId,
     this.adviserName = '',
     this.gradeLevelIds = const [],
+    this.gradeLevelNames = const [],
     this.lessonPlanId,
     this.lessonPlanTitle = '',
+    this.studentCount = 0,
     this.students = const [],
     this.isPendingSync = false,
   });
 
-  final String id; // Stringified server PK or `temp_cls_*`
+  final String id;
   final String name;
   final String schoolName;
   final String section;
@@ -301,77 +335,101 @@ class Classroom {
   final int? adviserId;
   final String adviserName;
   final List<int> gradeLevelIds;
+  final List<String> gradeLevelNames;
   final String? lessonPlanId;
   final String lessonPlanTitle;
+  final int studentCount;
   final List<Student> students;
   final bool isPendingSync;
 
   int? get serverId => int.tryParse(id);
   bool get isLocalDraft => serverId == null;
+  int get effectiveStudentCount =>
+      students.isNotEmpty ? students.length : studentCount;
 
-  factory Classroom.fromJson(Map<String, dynamic> json) {
+  factory Classroom.fromJson(JsonMap json) {
     final advObj = json['adviser_detail'] ?? json['adviser'];
     int? aId;
-    String aName = (json['adviser_username'] ?? '') as String;
-    if (advObj is int) {
-      aId = advObj;
-    } else if (advObj is Map<String, dynamic>) {
-      aId = (advObj['id'] ?? advObj['user_id']) as int?;
-      aName = (advObj['username'] ?? aName) as String;
+    String aName = asString(json['adviser_username']);
+    if (advObj is Map) {
+      final advMap = JsonMap.from(advObj);
+      aId = asNullableInt(advMap['id'] ?? advMap['user_id'] ?? advMap['pk']);
+      final first = asString(advMap['first_name']);
+      final last = asString(advMap['last_name']);
+      final full = '$first $last'.trim();
+      aName = full.isNotEmpty ? full : asString(advMap['username'], aName);
+    } else {
+      aId = asNullableInt(advObj);
     }
 
     final lpObj = json['lesson_plan_detail'] ?? json['lesson_plan'];
     String? lpId;
-    String lpTitle = (json['lesson_plan_title'] ?? '') as String;
-    if (lpObj is int || lpObj is String) {
-      lpId = lpObj.toString();
-    } else if (lpObj is Map<String, dynamic>) {
-      lpId = (lpObj['lp_id'] ?? lpObj['id'])?.toString();
-      lpTitle = (lpObj['title'] ?? lpTitle) as String;
+    String lpTitle = asString(json['lesson_plan_title']);
+    if (lpObj is Map) {
+      final lpMap = JsonMap.from(lpObj);
+      lpId = asNullableIdString(lpMap['lp_id'] ?? lpMap['id']);
+      lpTitle = asString(lpMap['lp_title'] ?? lpMap['title'], lpTitle);
+    } else if (lpObj != null) {
+      lpId = asNullableIdString(lpObj);
     }
 
     final glIds = <int>[];
+    final glNames = <String>[];
     final rawGl = json['grade_levels'];
     if (rawGl is List) {
       for (final item in rawGl) {
-        if (item is int) {
-          glIds.add(item);
-        } else if (item is Map<String, dynamic>) {
-          final idVal = item['id'] ?? item['grade_level_id'];
-          if (idVal is int) glIds.add(idVal);
+        if (item is Map) {
+          final glMap = JsonMap.from(item);
+          final idVal = asNullableInt(
+            glMap['gl_id'] ?? glMap['id'] ?? glMap['grade_level_id'],
+          );
+          if (idVal != null && !glIds.contains(idVal)) glIds.add(idVal);
+          final nameVal = asString(
+            glMap['grade_level_name'] ?? glMap['name'] ?? glMap['grade_name'],
+          );
+          if (nameVal.isNotEmpty && !glNames.contains(nameVal)) {
+            glNames.add(nameVal);
+          }
+        } else {
+          final idVal = asNullableInt(item);
+          if (idVal != null && !glIds.contains(idVal)) glIds.add(idVal);
         }
+      }
+    }
+    if (glNames.isEmpty && json['grade_level_names'] is List) {
+      for (final n in json['grade_level_names'] as List) {
+        final s = asString(n);
+        if (s.isNotEmpty) glNames.add(s);
       }
     }
 
-    final parsedStudents = <Student>[];
-    final rawStudents = json['students'];
-    if (rawStudents is List) {
-      for (final item in rawStudents) {
-        if (item is Map<String, dynamic>) {
-          parsedStudents.add(Student.fromJson(item));
-        }
-      }
-    }
+    final parsedStudents = parseModelList(json['students'], Student.fromJson);
+    final rawCount = asInt(json['student_count']);
+    final numericId = asNullableInt(json['classroom_id'] ?? json['id']);
+    final rawId = json['classroom_id'] ?? json['id'];
 
     return Classroom(
-      id: (json['classroom_id'] ?? json['id'] ?? '').toString(),
-      name: (json['name'] ?? '') as String,
-      schoolName: (json['school_name'] ?? '') as String,
-      section: (json['section'] ?? '') as String,
-      schoolYear: (json['school_year'] ?? '') as String,
-      isActive: (json['is_active'] ?? true) as bool,
+      id: numericId?.toString() ?? asString(rawId),
+      name: asString(json['name']),
+      schoolName: asString(json['school_name']),
+      section: asString(json['section']),
+      schoolYear: asString(json['school_year']),
+      isActive: asBool(json['is_active'], true),
       adviserId: aId,
       adviserName: aName,
       gradeLevelIds: glIds,
+      gradeLevelNames: glNames,
       lessonPlanId: lpId,
       lessonPlanTitle: lpTitle,
+      studentCount:
+          parsedStudents.isNotEmpty ? parsedStudents.length : rawCount,
       students: parsedStudents,
-      isPendingSync: (json['is_pending_sync'] ?? false) as bool,
+      isPendingSync: asBool(json['is_pending_sync']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
+  JsonMap toJson() => {
+        'classroom_id': serverId ?? id,
         'name': name,
         'school_name': schoolName,
         'section': section,
@@ -380,8 +438,10 @@ class Classroom {
         'adviser': adviserId,
         'adviser_username': adviserName,
         'grade_levels': gradeLevelIds,
+        'grade_level_names': gradeLevelNames,
         'lesson_plan': lessonPlanId,
         'lesson_plan_title': lessonPlanTitle,
+        'student_count': effectiveStudentCount,
         'students': students.map((e) => e.toJson()).toList(),
         'is_pending_sync': isPendingSync,
       };
@@ -396,11 +456,15 @@ class Classroom {
     int? adviserId,
     String? adviserName,
     List<int>? gradeLevelIds,
+    List<String>? gradeLevelNames,
     String? lessonPlanId,
+    bool clearLessonPlan = false,
     String? lessonPlanTitle,
+    int? studentCount,
     List<Student>? students,
     bool? isPendingSync,
   }) {
+    final nextStudents = students ?? this.students;
     return Classroom(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -411,9 +475,14 @@ class Classroom {
       adviserId: adviserId ?? this.adviserId,
       adviserName: adviserName ?? this.adviserName,
       gradeLevelIds: gradeLevelIds ?? this.gradeLevelIds,
-      lessonPlanId: lessonPlanId ?? this.lessonPlanId,
-      lessonPlanTitle: lessonPlanTitle ?? this.lessonPlanTitle,
-      students: students ?? this.students,
+      gradeLevelNames: gradeLevelNames ?? this.gradeLevelNames,
+      lessonPlanId:
+          clearLessonPlan ? null : (lessonPlanId ?? this.lessonPlanId),
+      lessonPlanTitle:
+          clearLessonPlan ? '' : (lessonPlanTitle ?? this.lessonPlanTitle),
+      studentCount: studentCount ??
+          (nextStudents.isNotEmpty ? nextStudents.length : this.studentCount),
+      students: nextStudents,
       isPendingSync: isPendingSync ?? this.isPendingSync,
     );
   }
@@ -421,14 +490,6 @@ class Classroom {
   static String encodeList(List<Classroom> items) =>
       jsonEncode(items.map((e) => e.toJson()).toList());
 
-  static List<Classroom> decodeList(String raw) {
-    final list = jsonDecode(raw) as List<dynamic>;
-    final result = <Classroom>[];
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        result.add(Classroom.fromJson(item));
-      }
-    }
-    return result;
-  }
+  static List<Classroom> decodeList(String raw) =>
+      parseModelList(jsonDecode(raw), Classroom.fromJson);
 }

@@ -8,7 +8,10 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/storage/hive_boxes.dart';
 import '../../../core/sync/id_mapping_store.dart';
 import '../../../core/sync/sync_queue_service.dart';
+import '../../curriculum/data/models/json_parsers.dart';
 import 'classroom_models.dart';
+
+typedef JsonMap = Map<String, dynamic>;
 
 final classroomRepositoryProvider = Provider<ClassroomRepository>((ref) {
   return ClassroomRepository(
@@ -40,34 +43,67 @@ class ClassroomRepository {
 
   List<dynamic> _extractList(dynamic response) {
     if (response is List) return response;
-    if (response is Map<String, dynamic> && response['results'] is List) {
-      return response['results'] as List<dynamic>;
+    if (response is Map) {
+      if (response['results'] is List) return response['results'] as List<dynamic>;
+      if (response['data'] is List) return response['data'] as List<dynamic>;
+      for (final val in response.values) {
+        if (val is List) return val;
+      }
     }
     return const [];
   }
 
-  List<T> _parseItems<T>(
-    List<dynamic> rawList,
-    T Function(Map<String, dynamic>) parser,
-  ) {
-    final result = <T>[];
-    for (final item in rawList) {
-      if (item is Map<String, dynamic>) {
-        result.add(parser(item));
+  Future<List<dynamic>> _fetchAllItems(
+    String endpoint, {
+    Map<String, dynamic>? queryParams,
+  }) async {
+    final items = <dynamic>[];
+    String? nextUrl = endpoint;
+    Map<String, dynamic>? currentParams = queryParams;
+
+    while (nextUrl != null && nextUrl.isNotEmpty) {
+      final response = await _apiClient.get(nextUrl, queryParams: currentParams);
+      items.addAll(_extractList(response));
+
+      if (response is Map && response['next'] is String) {
+        final rawNext = response['next'] as String;
+        final apiIdx = rawNext.indexOf('/api/v1/');
+        nextUrl = apiIdx >= 0 ? rawNext.substring(apiIdx + 7) : rawNext;
+        currentParams = null;
+      } else {
+        nextUrl = null;
       }
     }
-    return result;
+    return items;
   }
 
   // ==========================================
   // CLASSROOMS & ROSTER (with Analytics & Sorting)
   // ==========================================
 
-  Future<List<Classroom>> fetchClassrooms() async {
+  Future<List<Classroom>> fetchClassrooms({String? search}) async {
     try {
-      final response = await _apiClient.get(ApiEndpoints.classrooms);
-      final serverList =
-          _parseItems(_extractList(response), Classroom.fromJson);
+      final raw = await _fetchAllItems(
+        ApiEndpoints.classrooms,
+        queryParams: {
+          if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        },
+      );
+      final cachedById = {
+        for (final c in getCachedClassrooms()) c.id: c,
+      };
+      final serverList = parseModelList(raw, Classroom.fromJson).map((cls) {
+        final prev = cachedById[cls.id];
+        if (prev != null && prev.students.isNotEmpty && cls.students.isEmpty) {
+          return cls.copyWith(
+            students: prev.students,
+            studentCount: cls.studentCount > 0
+                ? cls.studentCount
+                : prev.students.length,
+          );
+        }
+        return cls;
+      }).toList();
 
       final unsyncedLocal =
           getCachedClassrooms().where((c) => c.isLocalDraft).toList();
@@ -103,11 +139,15 @@ class ClassroomRepository {
     try {
       final detailResp =
           await _apiClient.get(ApiEndpoints.classroomDetail(serverId));
-      var classroom = Classroom.fromJson(detailResp as Map<String, dynamic>);
+      var classroom = Classroom.fromJson(
+        Map<String, dynamic>.from(detailResp as Map),
+      );
 
-      // Fetch roster with computed `grade_average` & `attendance_average`[cite: 1, 2]
       final roster = await fetchClassroomStudents(id, ordering: 'last_name');
-      classroom = classroom.copyWith(students: roster);
+      classroom = classroom.copyWith(
+        students: roster,
+        studentCount: roster.length,
+      );
 
       await _saveClassroomCache(classroom);
       return classroom;
@@ -119,7 +159,6 @@ class ClassroomRepository {
     }
   }
 
-  /// Fetches `/api/v1/classrooms/classrooms/{id}/students/?ordering=...`[cite: 1, 2]
   Future<List<Student>> fetchClassroomStudents(
     String classroomId, {
     String ordering = 'last_name',
@@ -131,7 +170,7 @@ class ClassroomRepository {
     }
 
     try {
-      final response = await _apiClient.get(
+      final raw = await _fetchAllItems(
         ApiEndpoints.classroomStudents(serverId),
         queryParams: {
           'ordering': ordering,
@@ -139,14 +178,12 @@ class ClassroomRepository {
         },
       );
 
-      final serverStudents =
-          _parseItems(_extractList(response), Student.fromJson);
+      final serverStudents = parseModelList(raw, Student.fromJson);
 
       final existing = getCachedClassroomDetail(classroomId);
-      final pendingLocal = existing?.students
-              .where((s) => s.isPendingSync)
-              .toList() ??
-          const <Student>[];
+      final pendingLocal =
+          existing?.students.where((s) => s.isPendingSync).toList() ??
+              const <Student>[];
 
       final merged = [...pendingLocal, ...serverStudents];
       await _cacheBox.put(
@@ -157,7 +194,7 @@ class ClassroomRepository {
     } on ApiException catch (e) {
       final raw = _cacheBox.get(_classroomStudentsKey(classroomId, ordering));
       if (raw != null && raw.isNotEmpty) {
-        return _parseItems(jsonDecode(raw) as List<dynamic>, Student.fromJson);
+        return parseModelList(jsonDecode(raw), Student.fromJson);
       }
       final fallback =
           getCachedClassroomDetail(classroomId)?.students ?? const [];
@@ -170,7 +207,9 @@ class ClassroomRepository {
     final raw = _cacheBox.get(_classroomDetailKey(id));
     if (raw != null && raw.isNotEmpty) {
       try {
-        return Classroom.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        return Classroom.fromJson(
+          Map<String, dynamic>.from(jsonDecode(raw) as Map),
+        );
       } catch (_) {}
     }
     return getCachedClassrooms().where((c) => c.id == id).firstOrNull;
@@ -181,7 +220,7 @@ class ClassroomRepository {
       _classroomDetailKey(classroom.id),
       jsonEncode(classroom.toJson()),
     );
-    final list = getCachedClassrooms();
+    final list = List<Classroom>.of(getCachedClassrooms());
     final idx = list.indexWhere((c) => c.id == classroom.id);
     if (idx >= 0) {
       list[idx] = classroom;
@@ -191,8 +230,15 @@ class ClassroomRepository {
     await _cacheBox.put(_classroomsKey, Classroom.encodeList(list));
   }
 
+  Future<void> _removeClassroomCache(String id) async {
+    await _cacheBox.delete(_classroomDetailKey(id));
+    final list = List<Classroom>.of(getCachedClassrooms())
+      ..removeWhere((c) => c.id == id);
+    await _cacheBox.put(_classroomsKey, Classroom.encodeList(list));
+  }
+
   // ==========================================
-  // CREATE CLASSROOM, CREATE STUDENT & ENROLL
+  // CREATE, UPDATE & DELETE CLASSROOM
   // ==========================================
 
   Future<Classroom> createClassroom({
@@ -201,6 +247,7 @@ class ClassroomRepository {
     String section = '',
     String schoolYear = '',
     List<int> gradeLevelIds = const [],
+    List<String> gradeLevelNames = const [],
     String? lessonPlanId,
     String lessonPlanTitle = '',
     int? adviserId,
@@ -228,7 +275,9 @@ class ClassroomRepository {
       }
       final response =
           await _apiClient.post(ApiEndpoints.classrooms, body: payload);
-      final created = Classroom.fromJson(response as Map<String, dynamic>);
+      final created = Classroom.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
       await _saveClassroomCache(created);
       return created;
     } on ApiException catch (e) {
@@ -244,6 +293,7 @@ class ClassroomRepository {
         adviserId: adviserId,
         adviserName: adviserName,
         gradeLevelIds: gradeLevelIds,
+        gradeLevelNames: gradeLevelNames,
         lessonPlanId: lessonPlanId,
         lessonPlanTitle: lessonPlanTitle,
         isPendingSync: true,
@@ -255,7 +305,7 @@ class ClassroomRepository {
         endpoint: ApiEndpoints.classrooms,
         payload: payload,
         tempClientId: tempId,
-        primaryKeyField: 'id',
+        primaryKeyField: 'classroom_id',
         dependsOnTempIds: deps,
       );
       await _saveClassroomCache(draft);
@@ -263,8 +313,104 @@ class ClassroomRepository {
     }
   }
 
-  /// Creates a `Student` via `POST /classrooms/students/` and immediately
-  /// enrolls them into `classroomId` via `POST /classrooms/classrooms/{id}/enroll-students/`[cite: 1, 2].
+  Future<Classroom> updateClassroom({
+    required String classroomId,
+    required String name,
+    String schoolName = '',
+    String section = '',
+    String schoolYear = '',
+    bool isActive = true,
+    List<int> gradeLevelIds = const [],
+    List<String> gradeLevelNames = const [],
+    String? lessonPlanId,
+    String lessonPlanTitle = '',
+  }) async {
+    final isTemp = classroomId.startsWith(IdMappingStore.tempPrefix);
+    final isLpTemp = lessonPlanId != null &&
+        lessonPlanId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/classrooms/classrooms/$classroomId/';
+
+    final payload = <String, dynamic>{
+      'name': name.trim(),
+      'school_name': schoolName.trim(),
+      'section': section.trim(),
+      'school_year': schoolYear.trim(),
+      'is_active': isActive,
+      'grade_levels': gradeLevelIds,
+      'lesson_plan': (lessonPlanId != null && lessonPlanId.isNotEmpty)
+          ? (isLpTemp ? lessonPlanId : int.parse(lessonPlanId))
+          : null,
+    };
+
+    try {
+      if (isTemp || isLpTemp) {
+        throw ApiException(message: 'Record is offline draft', isOffline: true);
+      }
+      await _apiClient.patch(endpoint, body: payload);
+      return await fetchClassroomDetail(classroomId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'classroom_update',
+        method: 'PATCH',
+        endpoint: endpoint,
+        payload: payload,
+        dependsOnTempIds: [
+          if (isTemp) classroomId,
+          if (isLpTemp) lessonPlanId,
+        ],
+      );
+
+      final existing = getCachedClassroomDetail(classroomId);
+      if (existing != null) {
+        final optimistic = existing.copyWith(
+          name: name.trim(),
+          schoolName: schoolName.trim(),
+          section: section.trim(),
+          schoolYear: schoolYear.trim(),
+          isActive: isActive,
+          gradeLevelIds: gradeLevelIds,
+          gradeLevelNames: gradeLevelNames,
+          lessonPlanId: lessonPlanId,
+          clearLessonPlan: lessonPlanId == null || lessonPlanId.isEmpty,
+          lessonPlanTitle: lessonPlanTitle,
+          isPendingSync: true,
+        );
+        await _saveClassroomCache(optimistic);
+        return optimistic;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> deleteClassroom(String classroomId) async {
+    final isTemp = classroomId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/classrooms/classrooms/$classroomId/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _removeClassroomCache(classroomId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'classroom_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [classroomId] : const [],
+      );
+      await _removeClassroomCache(classroomId);
+    }
+  }
+
+  // ==========================================
+  // CREATE STUDENT & ENROLL
+  // ==========================================
+
   Future<Student> createAndEnrollStudent({
     required String classroomId,
     required String firstName,
@@ -289,12 +435,12 @@ class ClassroomRepository {
         throw ApiException(message: 'Classroom offline draft', isOffline: true);
       }
 
-      // Step 1: Create student in master directory[cite: 1, 2]
       final stuResp =
           await _apiClient.post(ApiEndpoints.students, body: studentPayload);
-      final created = Student.fromJson(stuResp as Map<String, dynamic>);
+      final created = Student.fromJson(
+        Map<String, dynamic>.from(stuResp as Map),
+      );
 
-      // Step 2: Enroll into classroom[cite: 1, 2]
       await _apiClient.post(
         ApiEndpoints.classroomEnrollStudents(int.parse(classroomId)),
         body: {
@@ -319,17 +465,15 @@ class ClassroomRepository {
         isPendingSync: true,
       );
 
-      // Queue Step 1: Create student[cite: 1, 2]
       await _syncQueue.enqueue(
         entityType: 'student',
         method: 'POST',
         endpoint: ApiEndpoints.students,
         payload: studentPayload,
         tempClientId: tempStuId,
-        primaryKeyField: 'id',
+        primaryKeyField: 'student_id',
       );
 
-      // Queue Step 2: Enroll student once both classroom & student have server PKs[cite: 1, 2]
       await _syncQueue.enqueue(
         entityType: 'enroll_students',
         method: 'POST',
@@ -348,7 +492,6 @@ class ClassroomRepository {
     }
   }
 
-  /// Batch-enrolls existing students from the master directory into a classroom[cite: 1].
   Future<void> enrollExistingStudents({
     required String classroomId,
     required List<Student> studentsToEnroll,
@@ -399,22 +542,33 @@ class ClassroomRepository {
 
   Future<List<Student>> fetchMasterStudents({String? search}) async {
     try {
-      final response = await _apiClient.get(
+      final raw = await _fetchAllItems(
         ApiEndpoints.students,
         queryParams: {
           if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         },
       );
-      final students = _parseItems(_extractList(response), Student.fromJson);
-      await _cacheBox.put(
-        _masterStudentsKey,
-        jsonEncode(students.map((e) => e.toJson()).toList()),
-      );
+      final students = parseModelList(raw, Student.fromJson);
+      if (search == null || search.trim().isEmpty) {
+        await _cacheBox.put(
+          _masterStudentsKey,
+          jsonEncode(students.map((e) => e.toJson()).toList()),
+        );
+      }
       return students;
     } on ApiException catch (e) {
       final raw = _cacheBox.get(_masterStudentsKey);
       if (raw != null && raw.isNotEmpty) {
-        return _parseItems(jsonDecode(raw) as List<dynamic>, Student.fromJson);
+        var cached = parseModelList(jsonDecode(raw), Student.fromJson);
+        if (search != null && search.trim().isNotEmpty) {
+          final q = search.trim().toLowerCase();
+          cached = cached
+              .where((s) =>
+                  s.fullName.toLowerCase().contains(q) ||
+                  s.lrn.toLowerCase().contains(q))
+              .toList();
+        }
+        return cached;
       }
       if (e.isOffline) return const [];
       rethrow;
@@ -428,8 +582,10 @@ class ClassroomRepository {
     final existing = getCachedClassroomDetail(classroomId);
     if (existing == null) return;
     if (existing.students.any((s) => s.id == student.id)) return;
+    final nextStudents = [...existing.students, student];
     final updated = existing.copyWith(
-      students: [...existing.students, student],
+      students: nextStudents,
+      studentCount: nextStudents.length,
     );
     await _saveClassroomCache(updated);
   }
@@ -447,12 +603,11 @@ class ClassroomRepository {
     }
 
     try {
-      final response = await _apiClient.get(
+      final raw = await _fetchAllItems(
         ApiEndpoints.attendanceSessions,
         queryParams: {'classroom': serverId},
       );
-      final sessions =
-          _parseItems(_extractList(response), AttendanceSession.fromJson);
+      final sessions = parseModelList(raw, AttendanceSession.fromJson);
 
       final pendingLocal = getCachedAttendanceSessions(classroomId)
           .where((s) => s.isPendingSync)
@@ -481,16 +636,12 @@ class ClassroomRepository {
     final raw = _cacheBox.get(_attendanceSessionsKey(classroomId));
     if (raw == null || raw.isEmpty) return const [];
     try {
-      return _parseItems(
-        jsonDecode(raw) as List<dynamic>,
-        AttendanceSession.fromJson,
-      );
+      return parseModelList(jsonDecode(raw), AttendanceSession.fromJson);
     } catch (_) {
       return const [];
     }
   }
 
-  /// Calls `POST /api/v1/classrooms/classrooms/{classroom_id}/record-attendance/`[cite: 1, 2]
   Future<AttendanceSession> recordAttendanceSession({
     required String classroomId,
     required String date,
@@ -501,7 +652,7 @@ class ClassroomRepository {
     final isClassTemp = classroomId.startsWith(IdMappingStore.tempPrefix);
     if (isClassTemp) deps.add(classroomId);
 
-    final serializedRecords = [];
+    final serializedRecords = <JsonMap>[];
     for (final entry in records) {
       final isStuTemp = entry.studentId.startsWith(IdMappingStore.tempPrefix);
       if (isStuTemp && !deps.contains(entry.studentId)) {
@@ -531,8 +682,8 @@ class ClassroomRepository {
         body: payload,
       );
 
-      final saved = response is Map<String, dynamic>
-          ? AttendanceSession.fromJson(response)
+      final saved = response is Map
+          ? AttendanceSession.fromJson(Map<String, dynamic>.from(response))
           : AttendanceSession(
               id: date,
               classroomId: classroomId,
@@ -571,7 +722,9 @@ class ClassroomRepository {
     String classroomId,
     AttendanceSession session,
   ) async {
-    final list = [...getCachedAttendanceSessions(classroomId)];
+    final list = List<AttendanceSession>.of(
+      getCachedAttendanceSessions(classroomId),
+    );
     final idx = list.indexWhere((s) => s.date == session.date);
     if (idx >= 0) {
       list[idx] = session;
@@ -588,19 +741,31 @@ class ClassroomRepository {
   // GRADEBOOK (`submit-grades/` tied to `LessonGrading`)
   // ==========================================
 
-  Future<List<StudentGrade>> fetchGrades(String classroomId) async {
+  Future<List<StudentGrade>> fetchGrades(
+    String classroomId, {
+    String? lessonPlanId,
+    Set<String> enrolledStudentIds = const {},
+  }) async {
     final serverId = int.tryParse(classroomId);
     if (serverId == null) {
       return getCachedGrades(classroomId);
     }
 
     try {
-      final response = await _apiClient.get(
+      final lpServerId =
+          lessonPlanId != null ? int.tryParse(lessonPlanId) : null;
+      final raw = await _fetchAllItems(
         ApiEndpoints.studentGrades,
-        queryParams: {'classroom': serverId},
+        queryParams: {
+          'grading_task__lesson_grade_level__lp': ?lpServerId,
+        },
       );
-      final grades =
-          _parseItems(_extractList(response), StudentGrade.fromJson);
+      var grades = parseModelList(raw, StudentGrade.fromJson);
+      if (enrolledStudentIds.isNotEmpty) {
+        grades = grades
+            .where((g) => enrolledStudentIds.contains(g.studentId))
+            .toList();
+      }
 
       final pendingLocal =
           getCachedGrades(classroomId).where((g) => g.isPendingSync).toList();
@@ -622,16 +787,12 @@ class ClassroomRepository {
     final raw = _cacheBox.get(_gradesKey(classroomId));
     if (raw == null || raw.isEmpty) return const [];
     try {
-      return _parseItems(
-        jsonDecode(raw) as List<dynamic>,
-        StudentGrade.fromJson,
-      );
+      return parseModelList(jsonDecode(raw), StudentGrade.fromJson);
     } catch (_) {
       return const [];
     }
   }
 
-  /// Calls `POST /api/v1/classrooms/classrooms/{classroom_id}/submit-grades/`[cite: 1, 2]
   Future<List<StudentGrade>> submitBatchGrades({
     required String classroomId,
     required List<StudentGrade> entries,
@@ -640,7 +801,7 @@ class ClassroomRepository {
     final isClassTemp = classroomId.startsWith(IdMappingStore.tempPrefix);
     if (isClassTemp) deps.add(classroomId);
 
-    final serializedGrades = [];
+    final serializedGrades = <JsonMap>[];
     for (final entry in entries) {
       final isStuTemp = entry.studentId.startsWith(IdMappingStore.tempPrefix);
       if (isStuTemp && !deps.contains(entry.studentId)) {
@@ -677,11 +838,19 @@ class ClassroomRepository {
       );
 
       final saved = response is List
-          ? _parseItems(response, StudentGrade.fromJson)
+          ? parseModelList(response, StudentGrade.fromJson)
           : entries;
 
       final existing = getCachedGrades(classroomId);
-      final updated = [...saved, ...existing];
+      final upsertedKeys = {
+        for (final g in saved) '${g.studentId}_${g.gradingTaskId}',
+      };
+      final remaining = existing
+          .where(
+              (g) => !upsertedKeys.contains('${g.studentId}_${g.gradingTaskId}'))
+          .toList();
+      final updated = [...saved, ...remaining];
+
       await _cacheBox.put(
         _gradesKey(classroomId),
         jsonEncode(updated.map((e) => e.toJson()).toList()),
@@ -715,7 +884,15 @@ class ClassroomRepository {
           .toList();
 
       final existing = getCachedGrades(classroomId);
-      final updated = [...optimistic, ...existing];
+      final upsertedKeys = {
+        for (final g in optimistic) '${g.studentId}_${g.gradingTaskId}',
+      };
+      final remaining = existing
+          .where(
+              (g) => !upsertedKeys.contains('${g.studentId}_${g.gradingTaskId}'))
+          .toList();
+      final updated = [...optimistic, ...remaining];
+
       await _cacheBox.put(
         _gradesKey(classroomId),
         jsonEncode(updated.map((e) => e.toJson()).toList()),

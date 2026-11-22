@@ -1,6 +1,6 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from apps.accounts.models import Account
-from .models import Classroom, AttendanceSession
+from .models import Classroom, AttendanceSession, StudentGrade
 
 
 class IsClassroomAdviserOrAdmin(BasePermission):
@@ -25,6 +25,8 @@ class IsClassroomAdviserOrAdmin(BasePermission):
             return obj.adviser_id == user.id
         if isinstance(obj, AttendanceSession):
             return obj.classroom.adviser_id == user.id
+        if isinstance(obj, StudentGrade):
+            return obj.student.classrooms.filter(adviser_id=user.id).exists()
         if hasattr(obj, 'classroom'):
             return obj.classroom.adviser_id == user.id
         if hasattr(obj, 'session'):

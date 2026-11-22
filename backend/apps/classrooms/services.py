@@ -78,7 +78,8 @@ def record_attendance_session(
 def submit_student_grades(grades_data: list[dict], classroom: Classroom | None = None) -> list[StudentGrade]:
     """
     Atomically creates or updates StudentGrade entries. If `classroom` is passed,
-    verifies each student is enrolled in that classroom.
+    verifies each student is enrolled in that classroom and that the task's
+    grade level matches the student's grade level.
     """
     enrolled_ids = None
     if classroom is not None:
@@ -94,6 +95,17 @@ def submit_student_grades(grades_data: list[dict], classroom: Classroom | None =
         if enrolled_ids is not None and student.student_id not in enrolled_ids:
             raise ValidationError(
                 {'grades': f"Student {student.student_id} ({student}) is not enrolled in this classroom."}
+            )
+
+        task_gl_id = getattr(grading_task.lesson_grade_level, 'gl_id', None)
+        if task_gl_id and student.grade_level_id and task_gl_id != student.grade_level_id:
+            raise ValidationError(
+                {
+                    'grades': (
+                        f"Student {student} ({student.grade_level}) cannot be graded on "
+                        f"'{grading_task.task_name}' which belongs to another grade level."
+                    )
+                }
             )
 
         if item['score'] > grading_task.max_score:
