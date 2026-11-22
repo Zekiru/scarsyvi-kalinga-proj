@@ -1,1 +1,0 @@
-# scarsyvi-kalinga-proj
