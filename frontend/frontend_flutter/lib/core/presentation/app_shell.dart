@@ -9,6 +9,7 @@ import '../../features/curriculum/presentation/lesson_plans_screen.dart';
 import '../../features/forums/presentation/forums_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../network/connectivity_provider.dart';
+import '../sync/sync_status_provider.dart';
 import 'sync_status_banner.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -16,9 +17,40 @@ class AppShell extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<AppShell> createState() => _AppShellState();
+
+  
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
+  late final AppLifecycleListener _lifecycleListener;
+  DateTime? _lastResumeSync;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      ref.read(offlinePrefetchServiceProvider).prefetchOwnedData();
+    });
+
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        final now = DateTime.now();
+        // Throttle to at most once every 15 seconds on rapid app switches
+        if (_lastResumeSync == null ||
+            now.difference(_lastResumeSync!) > const Duration(seconds: 15)) {
+          _lastResumeSync = now;
+          ref.read(syncStatusProvider.notifier).syncNow();
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
+
   int _selectedIndex = 0;
 
   static const _titles = [
@@ -33,14 +65,6 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (index >= 0 && index < _titles.length) {
       setState(() => _selectedIndex = index);
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() {
-      ref.read(offlinePrefetchServiceProvider).prefetchOwnedData();
-    });
   }
 
   @override

@@ -44,6 +44,36 @@ class SyncQueueService {
   int get failedCount => allOperations
       .where((op) => op.status == SyncOpStatus.failedNeedsReview)
       .length;
+  
+  Future<String?> _checkRemoteConflict({
+    required String endpoint,
+    required DateTime queuedAt,
+  }) async {
+    try {
+      final current = await _apiClient.get(endpoint);
+      if (current is Map<String, dynamic>) {
+        final rawUpdated =
+            current['updated_at'] ?? current['modified_at'] ?? current['updated'];
+        if (rawUpdated is String) {
+          final remoteUpdatedAt = DateTime.tryParse(rawUpdated)?.toUtc();
+          // 5-second grace buffer for minor device clock skew
+          if (remoteUpdatedAt != null &&
+              remoteUpdatedAt.isAfter(
+                queuedAt.toUtc().add(const Duration(seconds: 5)),
+              )) {
+            return 'Modified on server by another user while offline. '
+                'Tap Retry to overwrite or Discard to keep server version.';
+          }
+        }
+      }
+    } on ApiException catch (e) {
+      if (e.isOffline) rethrow;
+      if (e.statusCode == 404) {
+        return 'Record was deleted on the server while you were offline.';
+      }
+    } catch (_) {}
+    return null;
+  }
 
   /// Enqueues an offline mutation into Hive.
   Future<SyncOperation> enqueue({
@@ -107,6 +137,22 @@ class SyncQueueService {
           final resolvedPayload = rawPayload != null
               ? _idMappings.resolvePayload(rawPayload)
               : null;
+
+          // Conflict check for offline edits (PATCH/PUT) before overwriting
+          if ((op.method == 'PATCH' || op.method == 'PUT') &&
+              !resolvedEndpoint.contains(IdMappingStore.tempPrefix)) {
+            final conflictMsg = await _checkRemoteConflict(
+              endpoint: resolvedEndpoint,
+              queuedAt: op.createdAt,
+            );
+            if (conflictMsg != null) {
+              op.status = SyncOpStatus.failedNeedsReview;
+              op.errorMessage = conflictMsg;
+              await op.save();
+              onQueueChanged?.call();
+              continue;
+            }
+          }
 
           final response = await _dispatch(
             method: op.method,

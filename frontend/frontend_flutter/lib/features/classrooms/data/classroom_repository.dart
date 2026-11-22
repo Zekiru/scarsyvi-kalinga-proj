@@ -109,6 +109,15 @@ class ClassroomRepository {
           getCachedClassrooms().where((c) => c.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverList];
 
+      final serverIds = serverList.map((c) => c.id).toSet();
+      for (final old in cachedById.values) {
+        if (!old.isLocalDraft && !serverIds.contains(old.id)) {
+          await _cacheBox.delete(_classroomDetailKey(old.id));
+          await _cacheBox.delete(_attendanceSessionsKey(old.id));
+          await _cacheBox.delete(_gradesKey(old.id));
+        }
+      }
+
       await _cacheBox.put(_classroomsKey, Classroom.encodeList(merged));
       return merged;
     } catch (e) {

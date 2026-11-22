@@ -72,6 +72,16 @@ class ForumRepository {
           getCachedForums().where((f) => f.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverForums];
 
+      final serverForumIds = serverForums.map((f) => f.id).toSet();
+      for (final old in getCachedForums()) {
+        if (!old.isLocalDraft && !serverForumIds.contains(old.id)) {
+          for (final thr in getCachedThreads(old.id)) {
+            await _cacheBox.delete(_threadDetailKey(thr.id));
+          }
+          await _cacheBox.delete(_forumThreadsKey(old.id));
+        }
+      }
+
       await _cacheBox.put(_forumsKey, Forum.encodeList(merged));
       return merged;
     } catch (e) {
@@ -303,6 +313,13 @@ class ForumRepository {
       final localDrafts =
           getCachedThreads(forumId).where((t) => t.isLocalDraft).toList();
       final merged = [...localDrafts, ...serverThreads];
+
+      final serverThreadIds = serverThreads.map((t) => t.id).toSet();
+      for (final old in getCachedThreads(forumId)) {
+        if (!old.isLocalDraft && !serverThreadIds.contains(old.id)) {
+          await _cacheBox.delete(_threadDetailKey(old.id));
+        }
+      }
 
       await _cacheBox.put(
         _forumThreadsKey(forumId),

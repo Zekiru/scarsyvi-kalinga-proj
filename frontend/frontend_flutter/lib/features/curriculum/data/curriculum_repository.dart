@@ -126,6 +126,13 @@ class CurriculumRepository {
           cachedPlans.where((p) => p.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverPlans];
 
+      final serverPlanIds = serverPlans.map((p) => p.id).toSet();
+      for (final old in cachedPlans) {
+        if (!old.isLocalDraft && !serverPlanIds.contains(old.id)) {
+          await _cache.removeLessonPlan(old.id);
+        }
+      }
+
       await _cache.saveLessonPlans(merged);
       return merged;
     } catch (e) {
