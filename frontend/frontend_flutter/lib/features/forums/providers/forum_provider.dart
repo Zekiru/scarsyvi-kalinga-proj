@@ -78,6 +78,14 @@ class ForumsNotifier extends AsyncNotifier<List<Forum>> {
   }
 }
 
+/// Resolves all forum IDs the current user has participated in (created a
+/// thread or posted a reply), backed by Hive cache + server queries.
+final participatedForumIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return const {};
+  return ref.watch(forumRepositoryProvider).fetchParticipatedForumIds(user.id);
+});
+
 /// Evaluates whether the current user is a Forum Moderator for `lessonPlanId`:
 /// - `ADMIN` or `CHECKER` (via `currentUser.canModerate`), OR
 /// - An assigned author (`LpAuthor`) of the linked `LessonPlan`.
@@ -132,6 +140,7 @@ final forumReplyHelperProvider = Provider((ref) {
         );
     ref.read(syncStatusProvider.notifier).refreshCounts();
     ref.invalidate(threadDetailProvider(threadId));
+    ref.invalidate(participatedForumIdsProvider);
     return post;
   };
 });

@@ -91,6 +91,105 @@ class ForumRepository {
     }
   }
 
+  static String _participatedForumsKey(int userId) =>
+      'participated_forums_$userId';
+
+  Set<String> getCachedParticipatedForumIds(int userId) {
+    final raw = _cacheBox.get(_participatedForumsKey(userId));
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.map((e) => e.toString()).toSet();
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Queries `GET /api/v1/forums/threads/?author={userId}` and
+  /// `GET /api/v1/forums/posts/?author={userId}`[cite: 1, 6] to find every forum
+  /// the user has created a thread or posted a reply in, caching the result
+  /// in Hive for offline startup.
+  Future<Set<String>> fetchParticipatedForumIds(int userId) async {
+    final forumIds = <String>{...getCachedParticipatedForumIds(userId)};
+
+    // Also include any local offline drafts authored by this user
+    for (final forum in getCachedForums()) {
+      for (final thread in getCachedThreads(forum.id)) {
+        if (thread.authorId == userId) {
+          forumIds.add(forum.id);
+        }
+        final detail = getCachedThreadDetail(thread.id);
+        for (final post in (detail?.posts ?? thread.posts)) {
+          if (post.authorId == userId) {
+            forumIds.add(forum.id);
+          }
+        }
+      }
+    }
+
+    try {
+      // 1. Threads authored by user -> directly exposes `forum` ID[cite: 4]
+      final threadsResp = await _apiClient.get(
+        ApiEndpoints.threads,
+        queryParams: {'author': userId},
+      );
+      final userThreads =
+          _parseItems(_extractList(threadsResp), ForumThread.fromJson);
+      final threadIdToForumId = <String, String>{};
+      for (final t in userThreads) {
+        if (t.forumId.isNotEmpty) {
+          forumIds.add(t.forumId);
+          threadIdToForumId[t.id] = t.forumId;
+        }
+      }
+
+      // 2. Posts authored by user -> resolve `thread` -> `forum` ID[cite: 4]
+      final postsResp = await _apiClient.get(
+        ApiEndpoints.posts,
+        queryParams: {'author': userId},
+      );
+      final userPosts =
+          _parseItems(_extractList(postsResp), ForumPost.fromJson);
+      final unresolvedThreadIds = <String>{};
+      for (final p in userPosts) {
+        final knownForum = threadIdToForumId[p.threadId];
+        if (knownForum != null && knownForum.isNotEmpty) {
+          forumIds.add(knownForum);
+        } else if (p.threadId.isNotEmpty) {
+          unresolvedThreadIds.add(p.threadId);
+        }
+      }
+
+      for (final thrId in unresolvedThreadIds) {
+        final cachedDetail = getCachedThreadDetail(thrId);
+        if (cachedDetail != null && cachedDetail.forumId.isNotEmpty) {
+          forumIds.add(cachedDetail.forumId);
+          continue;
+        }
+        final sId = int.tryParse(thrId);
+        if (sId != null) {
+          try {
+            final thrResp =
+                await _apiClient.get(ApiEndpoints.threadDetail(sId));
+            final thr =
+                ForumThread.fromJson(thrResp as Map<String, dynamic>);
+            if (thr.forumId.isNotEmpty) {
+              forumIds.add(thr.forumId);
+            }
+          } catch (_) {}
+        }
+      }
+
+      await _cacheBox.put(
+        _participatedForumsKey(userId),
+        jsonEncode(forumIds.toList()),
+      );
+      return forumIds;
+    } on ApiException {
+      return forumIds;
+    }
+  }
+
   /// Idempotently initializes or fetches the `LessonPlanForum` for a `LessonPlan`
   /// via `POST /api/v1/forums/forums/by-lesson-plan/` with `{"lesson_plan_id": id}`[cite: 6, 9, 11].
   Future<Forum> getOrCreateForumForLessonPlan({
