@@ -5,6 +5,7 @@ import 'core/presentation/app_shell.dart';
 import 'core/storage/hive_boxes.dart';
 import 'features/accounts/presentation/login_screen.dart';
 import 'features/accounts/providers/auth_provider.dart';
+import 'features/home/presentation/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,9 @@ class KalingaApp extends ConsumerWidget {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF1B6B52),
       ),
+      routes: {
+        '/home': (_) => const HomeScreen(),
+      },
       home: home,
     );
   }

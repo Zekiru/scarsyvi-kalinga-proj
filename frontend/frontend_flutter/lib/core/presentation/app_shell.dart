@@ -5,6 +5,7 @@ import '../../features/accounts/presentation/account_screen.dart';
 import '../../features/classrooms/presentation/classrooms_screen.dart';
 import '../../features/curriculum/presentation/lesson_plans_screen.dart';
 import '../../features/forums/presentation/forums_screen.dart';
+import '../../features/home/presentation/home_screen.dart';
 import '../network/connectivity_provider.dart';
 import 'sync_status_banner.dart';
 
@@ -19,23 +20,31 @@ class _AppShellState extends ConsumerState<AppShell> {
   int _selectedIndex = 0;
 
   static const _titles = [
+    'Home',
     'Curriculum',
     'Classrooms',
     'Community Forums',
     'Account & Sync',
   ];
 
-  static const _pages = <Widget>[
-    LessonPlansScreen(),
-    ClassroomsScreen(),
-    ForumsScreen(),
-    AccountScreen(),
-  ];
+  void _selectTab(int index) {
+    if (index >= 0 && index < _titles.length) {
+      setState(() => _selectedIndex = index);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
     final isWide = MediaQuery.sizeOf(context).width >= 720;
+
+    final pages = <Widget>[
+      HomeScreen(onNavigateToTab: _selectTab),
+      const LessonPlansScreen(),
+      const ClassroomsScreen(),
+      const ForumsScreen(),
+      const AccountScreen(),
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -62,10 +71,14 @@ class _AppShellState extends ConsumerState<AppShell> {
                 if (isWide)
                   NavigationRail(
                     selectedIndex: _selectedIndex,
-                    onDestinationSelected: (idx) =>
-                        setState(() => _selectedIndex = idx),
+                    onDestinationSelected: _selectTab,
                     labelType: NavigationRailLabelType.all,
                     destinations: const [
+                      NavigationRailDestination(
+                        icon: Icon(Icons.home_outlined),
+                        selectedIcon: Icon(Icons.home),
+                        label: Text('Home'),
+                      ),
                       NavigationRailDestination(
                         icon: Icon(Icons.menu_book_outlined),
                         selectedIcon: Icon(Icons.menu_book),
@@ -90,7 +103,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                   ),
                 if (isWide) const VerticalDivider(width: 1),
                 Expanded(
-                  child: _pages[_selectedIndex]
+                  child: pages[_selectedIndex],
                 ),
               ],
             ),
@@ -101,9 +114,13 @@ class _AppShellState extends ConsumerState<AppShell> {
           ? null
           : NavigationBar(
               selectedIndex: _selectedIndex,
-              onDestinationSelected: (idx) =>
-                  setState(() => _selectedIndex = idx),
+              onDestinationSelected: _selectTab,
               destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
                 NavigationDestination(
                   icon: Icon(Icons.menu_book_outlined),
                   selectedIcon: Icon(Icons.menu_book),
