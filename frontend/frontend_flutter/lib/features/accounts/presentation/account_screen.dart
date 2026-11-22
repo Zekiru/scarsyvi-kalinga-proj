@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/connectivity_provider.dart';
 import '../../../core/sync/sync_status_provider.dart';
+import '../../../core/theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 
 class AccountScreen extends ConsumerWidget {
@@ -13,6 +14,7 @@ class AccountScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final syncState = ref.watch(syncStatusProvider);
     final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
+    final themeMode = ref.watch(themeModeProvider);
 
     if (user == null) {
       return const Center(child: Text('Not signed in.'));
@@ -62,6 +64,58 @@ class AccountScreen extends ConsumerWidget {
                   ),
                 ),
                 Chip(label: Text(user.role.apiValue)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.palette_outlined, size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Appearance',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                        icon: Icon(Icons.brightness_auto_outlined),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined),
+                      ),
+                    ],
+                    selected: {themeMode},
+                    onSelectionChanged: (selection) {
+                      ref
+                          .read(themeModeProvider.notifier)
+                          .setThemeMode(selection.first);
+                    },
+                  ),
+                ),
               ],
             ),
           ),

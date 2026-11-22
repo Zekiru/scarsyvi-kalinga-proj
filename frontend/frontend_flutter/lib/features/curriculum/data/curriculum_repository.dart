@@ -99,9 +99,10 @@ class CurriculumRepository {
       final levels = parseModelList(raw, GradeLevel.fromJson);
       await _cache.saveGradeLevels(levels);
       return levels;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = _cache.getGradeLevels();
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -127,9 +128,10 @@ class CurriculumRepository {
 
       await _cache.saveLessonPlans(merged);
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = _cache.getLessonPlans();
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -190,9 +192,8 @@ class CurriculumRepository {
 
       await _cache.saveDetail(merged);
       return merged;
-    } on ApiException catch (e) {
+    } catch (_) {
       final cached = _cache.getLessonPlanDetail(id);
-      if (e.isOffline && cached != null) return cached;
       if (cached != null) return cached;
       rethrow;
     }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/presentation/app_shell.dart';
 import 'core/storage/hive_boxes.dart';
+import 'core/theme/app_theme.dart';
 import 'features/accounts/presentation/login_screen.dart';
 import 'features/accounts/providers/auth_provider.dart';
 import 'features/home/presentation/home_screen.dart';
@@ -25,6 +26,7 @@ class KalingaApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     Widget home;
     switch (authState.status) {
@@ -39,12 +41,11 @@ class KalingaApp extends ConsumerWidget {
     }
 
     return MaterialApp(
-      title: 'Kalinga',
+      title: 'MileBeyond Education',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF1B6B52),
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       routes: {
         '/home': (_) => const HomeScreen(),
       },

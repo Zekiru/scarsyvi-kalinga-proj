@@ -1,4 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'offline_prefetch_service.dart';
+
+import '../../features/classrooms/providers/classroom_provider.dart';
+import '../../features/curriculum/providers/curriculum_provider.dart';
+import '../../features/forums/providers/forum_provider.dart';
 import '../network/connectivity_provider.dart';
 import 'sync_operation.dart';
 import 'sync_queue_service.dart';
@@ -30,7 +35,7 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
   SyncStatusState build() {
     final queueService = ref.watch(syncQueueServiceProvider);
 
-    // Automatically replay queued changes whenever the device comes back online
+    // Automatically replay queued changes & refresh caches on reconnect
     ref.listen<AsyncValue<bool>>(connectivityStreamProvider, (prev, next) {
       final isOnline = next.value ?? false;
       if (isOnline) {
@@ -63,27 +68,43 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
     state = _snapshot(service, isSyncing: state.isSyncing);
   }
 
+  Future<void> _refreshFeatureStores() async {
+    await Future.wait([
+      ref.read(lessonPlansProvider.notifier).refresh(),
+      ref.read(classroomsProvider.notifier).refresh(),
+      ref.read(forumsProvider.notifier).refresh(),
+    ]);
+    ref.invalidate(participatedForumIdsProvider);
+    await ref.read(offlinePrefetchServiceProvider).prefetchOwnedData();
+  }
+
   Future<void> syncNow() async {
     final service = ref.read(syncQueueServiceProvider);
-    if (service.pendingCount == 0) {
-      refreshCounts();
-      return;
-    }
-
     state = _snapshot(service, isSyncing: true);
-    await service.processQueue(
-      onQueueChanged: () {
-        state = _snapshot(service, isSyncing: true);
-      },
-    );
-    state = _snapshot(service, isSyncing: false);
+
+    try {
+      if (service.pendingCount > 0) {
+        await service.processQueue(
+          onQueueChanged: () {
+            state = _snapshot(service, isSyncing: true);
+          },
+        );
+      }
+      await _refreshFeatureStores();
+    } finally {
+      state = _snapshot(service, isSyncing: false);
+    }
   }
 
   Future<void> retryFailed() async {
     final service = ref.read(syncQueueServiceProvider);
     state = _snapshot(service, isSyncing: true);
-    await service.retryFailed();
-    state = _snapshot(service, isSyncing: false);
+    try {
+      await service.retryFailed();
+      await _refreshFeatureStores();
+    } finally {
+      state = _snapshot(service, isSyncing: false);
+    }
   }
 
   Future<void> discardFailedOperation(String opId) async {

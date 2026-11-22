@@ -114,13 +114,16 @@ class SyncQueueService {
             body: resolvedPayload,
           );
 
-          // Record newly created server PK if this operation created a parent record
+          // Record newly created server PK and reconcile local Hive caches
           if (op.tempClientId != null &&
               op.primaryKeyField != null &&
               response is Map<String, dynamic>) {
-            final newId = response[op.primaryKeyField];
-            if (newId is int) {
-              await _idMappings.saveMapping(op.tempClientId!, newId);
+            final newId = response[op.primaryKeyField] ?? response['id'];
+            final parsedId =
+                newId is int ? newId : int.tryParse(newId?.toString() ?? '');
+            if (parsedId != null) {
+              await _idMappings.saveMapping(op.tempClientId!, parsedId);
+              await _reconcileLocalCacheAfterCreate(op.tempClientId!, parsedId);
             }
           }
 
@@ -153,6 +156,69 @@ class SyncQueueService {
       }
     } finally {
       _isProcessing = false;
+    }
+  }
+
+  /// Removes synced `tmp_*` draft entries from list caches and rewrites any
+  /// remaining `tmp_*` references across feature Hive boxes so subsequent
+  /// network fetches don't keep stale local drafts alongside server records.
+  Future<void> _reconcileLocalCacheAfterCreate(
+    String tempClientId,
+    int serverId,
+  ) async {
+    final boxes = <Box<String>>[
+      HiveBoxes.curriculum,
+      HiveBoxes.classrooms,
+      HiveBoxes.forums,
+    ];
+
+    for (final box in boxes) {
+      if (!box.isOpen) continue;
+      final keysToDelete = <dynamic>[];
+      final updates = <dynamic, String>{};
+
+      for (final key in box.keys) {
+        final keyStr = key.toString();
+        final raw = box.get(key);
+        if (raw == null) continue;
+
+        // Delete per-entity detail cache keyed by the old temp ID
+        if (keyStr.endsWith('_$tempClientId')) {
+          keysToDelete.add(key);
+          continue;
+        }
+
+        if (!raw.contains(tempClientId)) continue;
+
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) {
+            // Filter out the temporary draft item from cached list collections;
+            // the fresh server item will be written by the post-sync refresh.
+            final filtered = decoded.where((entry) {
+              if (entry is Map) {
+                final idVal = entry['id']?.toString() ?? '';
+                if (idVal == tempClientId) return false;
+              }
+              return true;
+            }).toList();
+            final replaced = jsonEncode(filtered)
+                .replaceAll('"$tempClientId"', '$serverId');
+            updates[key] = replaced;
+          } else {
+            updates[key] = raw.replaceAll('"$tempClientId"', '$serverId');
+          }
+        } catch (_) {
+          updates[key] = raw.replaceAll(tempClientId, '$serverId');
+        }
+      }
+
+      for (final k in keysToDelete) {
+        await box.delete(k);
+      }
+      for (final entry in updates.entries) {
+        await box.put(entry.key, entry.value);
+      }
     }
   }
 

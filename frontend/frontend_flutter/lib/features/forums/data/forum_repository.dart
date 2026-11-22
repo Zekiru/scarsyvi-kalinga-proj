@@ -74,9 +74,10 @@ class ForumRepository {
 
       await _cacheBox.put(_forumsKey, Forum.encodeList(merged));
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = getCachedForums();
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -106,7 +107,7 @@ class ForumRepository {
   }
 
   /// Queries `GET /api/v1/forums/threads/?author={userId}` and
-  /// `GET /api/v1/forums/posts/?author={userId}`[cite: 1, 6] to find every forum
+  /// `GET /api/v1/forums/posts/?author={userId}` to find every forum
   /// the user has created a thread or posted a reply in, caching the result
   /// in Hive for offline startup.
   Future<Set<String>> fetchParticipatedForumIds(int userId) async {
@@ -128,7 +129,7 @@ class ForumRepository {
     }
 
     try {
-      // 1. Threads authored by user -> directly exposes `forum` ID[cite: 4]
+      // 1. Threads authored by user -> directly exposes `forum` ID
       final threadsResp = await _apiClient.get(
         ApiEndpoints.threads,
         queryParams: {'author': userId},
@@ -143,7 +144,7 @@ class ForumRepository {
         }
       }
 
-      // 2. Posts authored by user -> resolve `thread` -> `forum` ID[cite: 4]
+      // 2. Posts authored by user -> resolve `thread` -> `forum` ID
       final postsResp = await _apiClient.get(
         ApiEndpoints.posts,
         queryParams: {'author': userId},
@@ -185,13 +186,13 @@ class ForumRepository {
         jsonEncode(forumIds.toList()),
       );
       return forumIds;
-    } on ApiException {
+    } catch (_) {
       return forumIds;
     }
   }
 
   /// Idempotently initializes or fetches the `LessonPlanForum` for a `LessonPlan`
-  /// via `POST /api/v1/forums/forums/by-lesson-plan/` with `{"lesson_plan_id": id}`[cite: 6, 9, 11].
+  /// via `POST /api/v1/forums/forums/by-lesson-plan/` with `{"lesson_plan_id": id}`.
   Future<Forum> getOrCreateForumForLessonPlan({
     required String lessonPlanId,
     String lessonPlanTitle = '',
@@ -308,9 +309,10 @@ class ForumRepository {
         jsonEncode(merged.map((e) => e.toJson()).toList()),
       );
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = getCachedThreads(forumId);
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -362,9 +364,8 @@ class ForumRepository {
 
       await _saveThreadDetailCache(thread);
       return thread;
-    } on ApiException catch (e) {
+    } catch (_) {
       final cached = getCachedThreadDetail(threadId);
-      if (e.isOffline && cached != null) return cached;
       if (cached != null) return cached;
       rethrow;
     }
@@ -686,7 +687,7 @@ class ForumRepository {
   // MODERATION ACTIONS (`ADMIN`, `CHECKER`, & `LP AUTHOR`)
   // ==========================================
 
-  /// `POST /api/v1/forums/forums/{id}/toggle-lock/`[cite: 6, 11]
+  /// `POST /api/v1/forums/forums/{id}/toggle-lock/`
   Future<Forum> toggleForumLock(int forumServerId) async {
     final response =
         await _apiClient.post(ApiEndpoints.forumToggleLock(forumServerId));
@@ -695,7 +696,7 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/threads/{id}/moderate/`[cite: 6, 11]
+  /// `POST /api/v1/forums/threads/{id}/moderate/`
   Future<ForumThread> moderateThread({
     required int threadServerId,
     bool? isPinned,
@@ -717,7 +718,7 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/posts/{id}/toggle-hide/`[cite: 6, 11]
+  /// `POST /api/v1/forums/posts/{id}/toggle-hide/`
   Future<ForumPost> toggleHidePost({
     required String threadId,
     required int postServerId,

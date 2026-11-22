@@ -33,7 +33,7 @@ class ClassroomRepository {
   final Box<String> _cacheBox;
 
   static const String _classroomsKey = 'classrooms_list';
-  static const String _masterStudentsKey = 'master_students_list';
+  static final String _masterStudentsKey = 'master_students_list';
   static String _classroomDetailKey(String id) => 'classroom_$id';
   static String _classroomStudentsKey(String id, String ordering) =>
       'classroom_students_${id}_$ordering';
@@ -111,9 +111,10 @@ class ClassroomRepository {
 
       await _cacheBox.put(_classroomsKey, Classroom.encodeList(merged));
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = getCachedClassrooms();
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -151,9 +152,8 @@ class ClassroomRepository {
 
       await _saveClassroomCache(classroom);
       return classroom;
-    } on ApiException catch (e) {
+    } catch (_) {
       final cached = getCachedClassroomDetail(id);
-      if (e.isOffline && cached != null) return cached;
       if (cached != null) return cached;
       rethrow;
     }
@@ -191,14 +191,15 @@ class ClassroomRepository {
         jsonEncode(merged.map((e) => e.toJson()).toList()),
       );
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final raw = _cacheBox.get(_classroomStudentsKey(classroomId, ordering));
       if (raw != null && raw.isNotEmpty) {
         return parseModelList(jsonDecode(raw), Student.fromJson);
       }
       final fallback =
           getCachedClassroomDetail(classroomId)?.students ?? const [];
-      if (e.isOffline || fallback.isNotEmpty) return fallback;
+      if (fallback.isNotEmpty) return fallback;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -556,7 +557,7 @@ class ClassroomRepository {
         );
       }
       return students;
-    } on ApiException catch (e) {
+    } catch (e) {
       final raw = _cacheBox.get(_masterStudentsKey);
       if (raw != null && raw.isNotEmpty) {
         var cached = parseModelList(jsonDecode(raw), Student.fromJson);
@@ -570,7 +571,7 @@ class ClassroomRepository {
         }
         return cached;
       }
-      if (e.isOffline) return const [];
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -625,9 +626,10 @@ class ClassroomRepository {
         jsonEncode(merged.map((e) => e.toJson()).toList()),
       );
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = getCachedAttendanceSessions(classroomId);
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }
@@ -776,9 +778,10 @@ class ClassroomRepository {
         jsonEncode(merged.map((e) => e.toJson()).toList()),
       );
       return merged;
-    } on ApiException catch (e) {
+    } catch (e) {
       final cached = getCachedGrades(classroomId);
-      if (e.isOffline || cached.isNotEmpty) return cached;
+      if (cached.isNotEmpty) return cached;
+      if (e is ApiException && e.isOffline) return const [];
       rethrow;
     }
   }

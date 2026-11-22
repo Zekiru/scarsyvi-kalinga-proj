@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../sync/offline_prefetch_service.dart';
+
 import '../../features/accounts/presentation/account_screen.dart';
 import '../../features/classrooms/presentation/classrooms_screen.dart';
 import '../../features/curriculum/presentation/lesson_plans_screen.dart';
@@ -31,6 +33,14 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (index >= 0 && index < _titles.length) {
       setState(() => _selectedIndex = index);
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      ref.read(offlinePrefetchServiceProvider).prefetchOwnedData();
+    });
   }
 
   @override
