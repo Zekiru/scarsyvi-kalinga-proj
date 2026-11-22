@@ -3,10 +3,11 @@ import 'json_parsers.dart';
 class LessonFlow {
   const LessonFlow({
     required this.id,
-    this.lessonPlanId = '',
+    this.serverId,
+    required this.lessonPlanId,
     this.lessonGradeLevelId,
     this.gradeLevelName = '',
-    this.stepOrder = 0,
+    required this.stepOrder,
     required this.stage,
     required this.description,
     this.timeMinutes = 10,
@@ -14,6 +15,7 @@ class LessonFlow {
   });
 
   final String id;
+  final int? serverId;
   final String lessonPlanId;
   final String? lessonGradeLevelId;
   final String gradeLevelName;
@@ -23,46 +25,9 @@ class LessonFlow {
   final int timeMinutes;
   final bool isPendingSync;
 
-  String get phaseName => stage;
-  String get activityDescription => description;
-  int get durationMinutes => timeMinutes;
-
-  factory LessonFlow.fromJson(Map<String, dynamic> json) {
-    final idStr = asIdString(
-      json['lf_id'] ?? json['lesson_flow_id'] ?? json['flow_id'] ?? json['id'] ?? json['pk'],
-    );
-    final rawOrder = json['step_order'] ?? json['order'] ?? int.tryParse(idStr);
-    final lglRaw = json['lesson_grade_level'] ?? json['lgl_id'] ?? json['lgl'];
-    String gName = asString(json['grade_level_name']);
-    if (gName.isEmpty && lglRaw is Map<String, dynamic>) {
-      final glObj = lglRaw['grade_level'];
-      if (glObj is Map<String, dynamic>) {
-        gName = asString(glObj['grade_level_name'] ?? glObj['name']);
-      } else {
-        gName = asString(lglRaw['grade_level_name']);
-      }
-    }
-
-    return LessonFlow(
-      id: idStr,
-      lessonPlanId: asIdString(json['lp'] ?? json['lesson_plan'] ?? json['lp_id']),
-      lessonGradeLevelId: asNullableIdString(lglRaw),
-      gradeLevelName: gName,
-      stepOrder: asInt(rawOrder, 1),
-      stage: asString(json['stage'] ?? json['phase_name'] ?? json['phase'] ?? json['title']),
-      description: asString(
-        json['description'] ?? json['activity_description'] ?? json['activity'],
-      ),
-      timeMinutes: asInt(
-        json['time_minutes'] ?? json['duration_minutes'] ?? json['duration'],
-        10,
-      ),
-      isPendingSync: asBool(json['is_pending_sync']),
-    );
-  }
-
   LessonFlow copyWith({
     String? id,
+    int? serverId,
     String? lessonPlanId,
     String? lessonGradeLevelId,
     String? gradeLevelName,
@@ -74,6 +39,7 @@ class LessonFlow {
   }) {
     return LessonFlow(
       id: id ?? this.id,
+      serverId: serverId ?? this.serverId,
       lessonPlanId: lessonPlanId ?? this.lessonPlanId,
       lessonGradeLevelId: lessonGradeLevelId ?? this.lessonGradeLevelId,
       gradeLevelName: gradeLevelName ?? this.gradeLevelName,
@@ -85,8 +51,51 @@ class LessonFlow {
     );
   }
 
+  factory LessonFlow.fromJson(Map<String, dynamic> json) {
+    final numId = asNullableInt(json['lf_id'] ?? json['flow_id'] ?? json['id']);
+    final rawId = json['lf_id'] ?? json['flow_id'] ?? json['id'];
+
+    final lglObj = json['lesson_grade_level'] is Map
+        ? Map<String, dynamic>.from(json['lesson_grade_level'] as Map)
+        : null;
+    final glObj = lglObj?['gl'] is Map
+        ? Map<String, dynamic>.from(lglObj!['gl'] as Map)
+        : null;
+
+    return LessonFlow(
+      id: numId?.toString() ?? asString(rawId),
+      serverId: numId,
+      lessonPlanId: asIdString(
+        json['lesson_plan'] ?? json['lp'] ?? lglObj?['lp'],
+      ),
+      lessonGradeLevelId: asNullableIdString(json['lesson_grade_level']),
+      gradeLevelName: asString(
+        json['grade_level_name'] ??
+            lglObj?['grade_level_name'] ??
+            glObj?['grade_level_name'],
+      ),
+      stepOrder: asInt(
+        json['step_order'] ?? json['order'] ?? numId,
+        1,
+      ),
+      stage: asString(
+        json['stage'] ?? json['step_title'] ?? json['phase'] ?? json['title'],
+        'Activity',
+      ),
+      description: asString(
+        json['description'] ?? json['activities'] ?? json['teacher_activity'],
+      ),
+      timeMinutes: asInt(
+        json['time_minutes'] ?? json['duration_minutes'] ?? json['minutes'],
+        10,
+      ),
+      isPendingSync: json['isPendingSync'] == true,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        'lf_id': id,
+        'lf_id': serverId ?? id,
+        'id': serverId ?? id,
         'lesson_plan': lessonPlanId,
         'lesson_grade_level': lessonGradeLevelId,
         'grade_level_name': gradeLevelName,
@@ -94,24 +103,26 @@ class LessonFlow {
         'stage': stage,
         'description': description,
         'time_minutes': timeMinutes,
-        'is_pending_sync': isPendingSync,
+        'isPendingSync': isPendingSync,
       };
 }
 
 class LessonGrading {
   const LessonGrading({
     required this.id,
-    this.lessonPlanId = '',
+    this.serverId,
+    required this.lessonPlanId,
     this.lessonGradeLevelId,
     this.gradeLevelName = '',
     required this.taskName,
     this.taskDescription = '',
     this.gradeWeight = 0,
-    this.maxScore = 0,
+    this.maxScore = 10,
     this.isPendingSync = false,
   });
 
   final String id;
+  final int? serverId;
   final String lessonPlanId;
   final String? lessonGradeLevelId;
   final String gradeLevelName;
@@ -121,45 +132,13 @@ class LessonGrading {
   final int maxScore;
   final bool isPendingSync;
 
+  // Backward-compatible getters for classrooms feature
   String get criteriaName => taskName;
-  String get rubricNotes => taskDescription;
   double get weightPercentage => gradeWeight;
-
-  factory LessonGrading.fromJson(Map<String, dynamic> json) {
-    final lglRaw = json['lesson_grade_level'] ?? json['lgl_id'] ?? json['lgl'];
-    String gName = asString(json['grade_level_name']);
-    if (gName.isEmpty && lglRaw is Map<String, dynamic>) {
-      final glObj = lglRaw['grade_level'];
-      if (glObj is Map<String, dynamic>) {
-        gName = asString(glObj['grade_level_name'] ?? glObj['name']);
-      } else {
-        gName = asString(lglRaw['grade_level_name']);
-      }
-    }
-
-    return LessonGrading(
-      id: asIdString(
-        json['lg_id'] ?? json['lesson_grading_id'] ?? json['grading_id'] ?? json['id'] ?? json['pk'],
-      ),
-      lessonPlanId: asIdString(json['lp'] ?? json['lesson_plan'] ?? json['lp_id']),
-      lessonGradeLevelId: asNullableIdString(lglRaw),
-      gradeLevelName: gName,
-      taskName: asString(
-        json['task_name'] ?? json['criteria_name'] ?? json['criterion'] ?? json['title'],
-      ),
-      taskDescription: asString(
-        json['task_description'] ?? json['rubric_notes'] ?? json['description'],
-      ),
-      gradeWeight: asDouble(
-        json['grade_weight'] ?? json['weight_percentage'] ?? json['weight'],
-      ),
-      maxScore: asInt(json['max_score'] ?? json['total_score']),
-      isPendingSync: asBool(json['is_pending_sync']),
-    );
-  }
 
   LessonGrading copyWith({
     String? id,
+    int? serverId,
     String? lessonPlanId,
     String? lessonGradeLevelId,
     String? gradeLevelName,
@@ -171,6 +150,7 @@ class LessonGrading {
   }) {
     return LessonGrading(
       id: id ?? this.id,
+      serverId: serverId ?? this.serverId,
       lessonPlanId: lessonPlanId ?? this.lessonPlanId,
       lessonGradeLevelId: lessonGradeLevelId ?? this.lessonGradeLevelId,
       gradeLevelName: gradeLevelName ?? this.gradeLevelName,
@@ -182,8 +162,46 @@ class LessonGrading {
     );
   }
 
+  factory LessonGrading.fromJson(Map<String, dynamic> json) {
+    final numId =
+        asNullableInt(json['lg_id'] ?? json['grading_id'] ?? json['id']);
+    final rawId = json['lg_id'] ?? json['grading_id'] ?? json['id'];
+
+    final lglObj = json['lesson_grade_level'] is Map
+        ? Map<String, dynamic>.from(json['lesson_grade_level'] as Map)
+        : null;
+    final glObj = lglObj?['gl'] is Map
+        ? Map<String, dynamic>.from(lglObj!['gl'] as Map)
+        : null;
+
+    return LessonGrading(
+      id: numId?.toString() ?? asString(rawId),
+      serverId: numId,
+      lessonPlanId: asIdString(
+        json['lesson_plan'] ?? json['lp'] ?? lglObj?['lp'],
+      ),
+      lessonGradeLevelId: asNullableIdString(json['lesson_grade_level']),
+      gradeLevelName: asString(
+        json['grade_level_name'] ??
+            lglObj?['grade_level_name'] ??
+            glObj?['grade_level_name'],
+      ),
+      taskName: asString(
+        json['task_name'] ?? json['criteria_name'] ?? json['title'],
+        'Assessment Task',
+      ),
+      taskDescription: asString(
+        json['task_description'] ?? json['description'],
+      ),
+      gradeWeight: asDouble(json['grade_weight'] ?? json['weight']),
+      maxScore: asInt(json['max_score'], 10),
+      isPendingSync: json['isPendingSync'] == true,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        'lg_id': id,
+        'lg_id': serverId ?? id,
+        'id': serverId ?? id,
         'lesson_plan': lessonPlanId,
         'lesson_grade_level': lessonGradeLevelId,
         'grade_level_name': gradeLevelName,
@@ -191,24 +209,28 @@ class LessonGrading {
         'task_description': taskDescription,
         'grade_weight': gradeWeight,
         'max_score': maxScore,
-        'is_pending_sync': isPendingSync,
+        'isPendingSync': isPendingSync,
       };
 }
 
 class LessonMaterial {
   const LessonMaterial({
     required this.id,
-    this.lessonPlanId = '',
+    this.serverId,
+    this.materialServerId,
+    required this.lessonPlanId,
     this.lessonGradeLevelId,
     this.gradeLevelName = '',
     required this.title,
-    this.materialType = 'DOCUMENT',
+    this.materialType = 'PDF',
     this.resourceUrl = '',
     this.notes = '',
     this.isPendingSync = false,
   });
 
   final String id;
+  final int? serverId;
+  final int? materialServerId;
   final String lessonPlanId;
   final String? lessonGradeLevelId;
   final String gradeLevelName;
@@ -218,33 +240,10 @@ class LessonMaterial {
   final String notes;
   final bool isPendingSync;
 
-  factory LessonMaterial.fromJson(Map<String, dynamic> json) {
-    final lglRaw = json['lesson_grade_level'] ?? json['lgl_id'] ?? json['lgl'];
-    String gName = asString(json['grade_level_name']);
-    if (gName.isEmpty && lglRaw is Map<String, dynamic>) {
-      final glObj = lglRaw['grade_level'];
-      if (glObj is Map<String, dynamic>) {
-        gName = asString(glObj['grade_level_name'] ?? glObj['name']);
-      } else {
-        gName = asString(lglRaw['grade_level_name']);
-      }
-    }
-
-    return LessonMaterial(
-      id: asIdString(json['material_id'] ?? json['lm_id'] ?? json['id'] ?? json['pk']),
-      lessonPlanId: asIdString(json['lp'] ?? json['lesson_plan'] ?? json['lp_id']),
-      lessonGradeLevelId: asNullableIdString(lglRaw),
-      gradeLevelName: gName,
-      title: asString(json['title'] ?? json['material_title'] ?? json['name']),
-      materialType: asString(json['material_type'] ?? json['type'], 'DOCUMENT'),
-      resourceUrl: asString(json['resource_url'] ?? json['url'] ?? json['file']),
-      notes: asString(json['notes'] ?? json['description']),
-      isPendingSync: asBool(json['is_pending_sync']),
-    );
-  }
-
   LessonMaterial copyWith({
     String? id,
+    int? serverId,
+    int? materialServerId,
     String? lessonPlanId,
     String? lessonGradeLevelId,
     String? gradeLevelName,
@@ -256,6 +255,8 @@ class LessonMaterial {
   }) {
     return LessonMaterial(
       id: id ?? this.id,
+      serverId: serverId ?? this.serverId,
+      materialServerId: materialServerId ?? this.materialServerId,
       lessonPlanId: lessonPlanId ?? this.lessonPlanId,
       lessonGradeLevelId: lessonGradeLevelId ?? this.lessonGradeLevelId,
       gradeLevelName: gradeLevelName ?? this.gradeLevelName,
@@ -267,15 +268,86 @@ class LessonMaterial {
     );
   }
 
+  factory LessonMaterial.fromJson(Map<String, dynamic> json) {
+    final nestedMaterial = json['material'] is Map
+        ? Map<String, dynamic>.from(json['material'] as Map)
+        : null;
+
+    final numId = asNullableInt(
+      json['lgm_id'] ?? json['material_id'] ?? json['id'],
+    );
+    final rawId = json['lgm_id'] ?? json['material_id'] ?? json['id'];
+
+    final matId = asNullableInt(
+      nestedMaterial?['material_id'] ??
+          nestedMaterial?['id'] ??
+          json['material_id'],
+    );
+
+    final lglObj = json['lesson_grade_level'] is Map
+        ? Map<String, dynamic>.from(json['lesson_grade_level'] as Map)
+        : null;
+    final glObj = lglObj?['gl'] is Map
+        ? Map<String, dynamic>.from(lglObj!['gl'] as Map)
+        : null;
+
+    return LessonMaterial(
+      id: numId?.toString() ?? asString(rawId),
+      serverId: numId,
+      materialServerId: matId,
+      lessonPlanId: asIdString(
+        json['lesson_plan'] ?? json['lp'] ?? lglObj?['lp'],
+      ),
+      lessonGradeLevelId: asNullableIdString(json['lesson_grade_level']),
+      gradeLevelName: asString(
+        json['grade_level_name'] ??
+            lglObj?['grade_level_name'] ??
+            glObj?['grade_level_name'],
+      ),
+      title: asString(
+        nestedMaterial?['file_name'] ??
+            nestedMaterial?['title'] ??
+            json['file_name'] ??
+            json['title'],
+        'Untitled Material',
+      ),
+      materialType: asString(
+        nestedMaterial?['file_type'] ??
+            nestedMaterial?['material_type'] ??
+            json['file_type'] ??
+            json['material_type'],
+        'PDF',
+      ),
+      resourceUrl: asString(
+        nestedMaterial?['file_url'] ??
+            nestedMaterial?['resource_url'] ??
+            json['file_url'] ??
+            json['resource_url'],
+      ),
+      notes: asString(
+        json['usage_instructions'] ??
+            nestedMaterial?['description'] ??
+            json['notes'] ??
+            json['description'],
+      ),
+      isPendingSync: json['isPendingSync'] == true,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        'material_id': id,
+        'id': serverId ?? id,
+        if (materialServerId != null) 'material_id': materialServerId,
         'lesson_plan': lessonPlanId,
         'lesson_grade_level': lessonGradeLevelId,
         'grade_level_name': gradeLevelName,
+        'file_name': title,
         'title': title,
+        'file_type': materialType,
         'material_type': materialType,
+        'file_url': resourceUrl,
         'resource_url': resourceUrl,
+        'usage_instructions': notes,
         'notes': notes,
-        'is_pending_sync': isPendingSync,
+        'isPendingSync': isPendingSync,
       };
 }

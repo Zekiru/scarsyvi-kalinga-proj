@@ -10,9 +10,10 @@ int? asNullableInt(dynamic v) {
   if (v is int) return v;
   if (v is num) return v.toInt();
   if (v is String) return int.tryParse(v);
-  if (v is Map<String, dynamic>) {
+  if (v is Map) {
     return asNullableInt(
-      v['id'] ??
+      v['account_id'] ??
+          v['id'] ??
           v['lp_id'] ??
           v['lgl_id'] ??
           v['gl_id'] ??
@@ -26,7 +27,7 @@ int? asNullableInt(dynamic v) {
 
 String asIdString(dynamic v, [String fallback = '']) {
   if (v == null) return fallback;
-  if (v is Map<String, dynamic>) {
+  if (v is Map) {
     final inner = v['id'] ??
         v['lgl_id'] ??
         v['lp_id'] ??
@@ -67,11 +68,14 @@ List<T> parseModelList<T>(
   dynamic raw,
   T Function(Map<String, dynamic>) parser,
 ) {
-  if (raw is! List) return const [];
+  final list = raw is List
+      ? raw
+      : (raw is Map && raw['results'] is List ? raw['results'] as List : null);
+  if (list == null) return <T>[];
   final result = <T>[];
-  for (final item in raw) {
-    if (item is Map<String, dynamic>) {
-      result.add(parser(item));
+  for (final item in list) {
+    if (item is Map) {
+      result.add(parser(Map<String, dynamic>.from(item)));
     }
   }
   return result;

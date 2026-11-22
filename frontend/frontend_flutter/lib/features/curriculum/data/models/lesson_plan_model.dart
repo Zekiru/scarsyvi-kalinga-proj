@@ -5,46 +5,114 @@ import 'lesson_components_models.dart';
 
 class LessonAuthorEntry {
   const LessonAuthorEntry({
-    required this.username,
-    this.fullName = '',
-    this.authorRole = 'Author',
+    this.id,
     this.userId,
+    this.username = '',
+    this.fullName = '',
+    this.authorRole = 'Primary Author',
   });
 
+  final int? id;
+  final int? userId;
   final String username;
   final String fullName;
   final String authorRole;
-  final int? userId;
 
-  String get displayLabel =>
-      fullName.isNotEmpty ? '$fullName (@$username)' : '@$username';
+  String get displayLabel {
+    final name = fullName.isNotEmpty
+        ? fullName
+        : (username.isNotEmpty ? '@$username' : 'User #${userId ?? ''}');
+    return authorRole.isNotEmpty ? '$name ($authorRole)' : name;
+  }
+
+  factory LessonAuthorEntry.fromJson(Map<String, dynamic> json) {
+    final rawAccount = json['account'] ?? json['user'] ?? json['author'];
+    final accountObj =
+        rawAccount is Map ? Map<String, dynamic>.from(rawAccount) : null;
+
+    final firstName =
+        asString(accountObj?['first_name'] ?? json['first_name']);
+    final lastName = asString(accountObj?['last_name'] ?? json['last_name']);
+    final combined = '$firstName $lastName'.trim();
+
+    final rawRole = asString(
+      json['author_role'] ?? json['checker_role'] ?? json['role'],
+    );
+
+    final resolvedUserId = asNullableInt(
+      json['account_id'] ??
+          accountObj?['id'] ??
+          accountObj?['account_id'] ??
+          accountObj?['user_id'] ??
+          accountObj?['pk'] ??
+          json['user_id'] ??
+          json['author_id'] ??
+          rawAccount,
+    );
+
+    final resolvedUsername = asString(
+      accountObj?['username'] ??
+          accountObj?['user_name'] ??
+          json['username'] ??
+          json['author_username'] ??
+          json['user_username'],
+    );
+
+    return LessonAuthorEntry(
+      id: asNullableInt(json['id'] ?? json['lpa_id']),
+      userId: resolvedUserId,
+      username: resolvedUsername,
+      fullName: asString(
+        json['full_name'] ??
+            accountObj?['full_name'] ??
+            (combined.isNotEmpty ? combined : ''),
+      ),
+      authorRole: rawRole.isNotEmpty ? rawRole : 'Primary Author',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'account_id': userId,
+        'account': {
+          'id': userId,
+          'account_id': userId,
+          'username': username,
+          'full_name': fullName,
+        },
+        'user_id': userId,
+        'username': username,
+        'full_name': fullName,
+        'author_role': authorRole,
+      };
 }
 
 class LessonPlan {
   const LessonPlan({
     required this.id,
+    this.serverId,
     required this.title,
     required this.subject,
-    this.primaryLanguage = 'English',
+    this.primaryLanguage = '',
     this.suggestedDemographic = '',
+    this.learningModelDescription = '',
+    this.intentionsDescription = '',
+    this.notes = '',
+    this.description = '',
     this.schoolName = '',
     this.teachingDate = '',
     this.quarterTerm = '',
     this.timeSessions = '',
-    this.multigradeModel = '',
-    this.sharedSubTheme = '',
     this.learnerContext = '',
     this.reflectionQuestions = '',
-    this.notesForNextSession = '',
-    this.description = '',
     this.authorId,
     this.authorName = '',
-    this.authorEntries = const [],
     this.authorIds = const [],
-    this.checkerId,
+    this.authorEntries = const [],
+    this.checkerEntries = const [],
     this.checkerName = '',
-    this.isApproved = false,
     this.isPublic = true,
+    this.isApproved = false,
     this.forkedFromId,
     this.forkCount = 0,
     this.gradeLevels = const [],
@@ -53,31 +121,35 @@ class LessonPlan {
     this.materials = const [],
     this.extraFields = const {},
     this.isPendingSync = false,
+    this.updatedAt,
   });
 
   final String id;
+  final int? serverId;
   final String title;
   final String subject;
   final String primaryLanguage;
   final String suggestedDemographic;
+  final String learningModelDescription;
+  final String intentionsDescription;
+  final String notes;
+  final String description;
+
   final String schoolName;
   final String teachingDate;
   final String quarterTerm;
   final String timeSessions;
-  final String multigradeModel;
-  final String sharedSubTheme;
   final String learnerContext;
   final String reflectionQuestions;
-  final String notesForNextSession;
-  final String description;
+
   final int? authorId;
   final String authorName;
-  final List<LessonAuthorEntry> authorEntries;
   final List<int> authorIds;
-  final int? checkerId;
+  final List<LessonAuthorEntry> authorEntries;
+  final List<LessonAuthorEntry> checkerEntries;
   final String checkerName;
-  final bool isApproved;
   final bool isPublic;
+  final bool isApproved;
   final int? forkedFromId;
   final int forkCount;
   final List<LessonGradeLevel> gradeLevels;
@@ -86,349 +158,202 @@ class LessonPlan {
   final List<LessonMaterial> materials;
   final Map<String, dynamic> extraFields;
   final bool isPendingSync;
+  final String? updatedAt;
 
-  int? get serverId => int.tryParse(id);
-  bool get isLocalDraft => serverId == null;
+  String get multigradeModel => learningModelDescription;
+  String get sharedSubTheme => intentionsDescription;
+  String get notesForNextSession => notes;
 
-  bool isOwnedBy(int? userId) {
-    if (userId == null) return false;
-    return authorId == userId || authorIds.contains(userId);
+  bool _matchesUser(int? userId, String? username) {
+    final normalizedUser = username?.trim().toLowerCase() ?? '';
+    if (userId != null && userId > 0) {
+      if (authorId == userId ||
+          authorIds.contains(userId) ||
+          authorEntries.any((e) => e.userId == userId)) {
+        return true;
+      }
+    }
+    if (normalizedUser.isNotEmpty) {
+      if (authorName.trim().toLowerCase() == normalizedUser ||
+          authorEntries.any(
+            (e) => e.username.trim().toLowerCase() == normalizedUser,
+          )) {
+        return true;
+      }
+    }
+    return false;
   }
 
-  /// True when [userId] created this plan (primary author or local draft).
-  bool isCreatedBy(int? userId) {
+  String primaryAuthorDisplay({int? currentUserId, String? currentUsername}) {
+    if (authorEntries.isNotEmpty) {
+      final primary = authorEntries.firstWhere(
+        (e) =>
+            !e.authorRole.toLowerCase().contains('check') &&
+            !e.authorRole.toLowerCase().contains('review') &&
+            !e.authorRole.toLowerCase().contains('co-author') &&
+            !e.authorRole.toLowerCase().contains('contributor') &&
+            !e.authorRole.toLowerCase().contains('supporting'),
+        orElse: () => authorEntries.first,
+      );
+      if (primary.fullName.trim().isNotEmpty) return primary.fullName.trim();
+      if (primary.username.trim().isNotEmpty) {
+        final u = primary.username.trim();
+        return u.startsWith('@') ? u : '@$u';
+      }
+    }
+    if (authorName.trim().isNotEmpty) {
+      final u = authorName.trim();
+      return u.startsWith('@') ? u : '@$u';
+    }
+    if (currentUsername != null &&
+        currentUsername.trim().isNotEmpty &&
+        isCreatedBy(currentUserId, currentUsername: currentUsername)) {
+      final u = currentUsername.trim();
+      return u.startsWith('@') ? u : '@$u';
+    }
+    if (authorId != null && authorId! > 0) {
+      return 'User #$authorId';
+    }
+    return '';
+  }
+
+  bool get isLocalDraft =>
+      serverId == null && (id.startsWith('temp_') || int.tryParse(id) == null);
+
+  bool isOwnedBy(int? currentUserId, {String? currentUsername}) {
     if (isLocalDraft) return true;
-    if (userId == null) return false;
+    return _matchesUser(currentUserId, currentUsername);
+  }
 
-    final userEntries =
-        authorEntries.where((e) => e.userId == userId).toList();
-    if (userEntries.isNotEmpty) {
-      final hasPrimaryRole = userEntries.any((e) {
-        final role = e.authorRole.trim().toLowerCase();
-        return role.isEmpty ||
-            role == 'author' ||
-            role == 'primary' ||
-            role == 'primary author' ||
-            role == 'creator';
-      });
-      if (hasPrimaryRole) return true;
-      if (authorEntries.first.userId == userId) return true;
-      return false;
+  bool isCreatedBy(int? currentUserId, {String? currentUsername}) {
+    if (isLocalDraft) return true;
+    final hasValidId = currentUserId != null && currentUserId > 0;
+    final normalizedUser = currentUsername?.trim().toLowerCase() ?? '';
+    if (!hasValidId && normalizedUser.isEmpty) return false;
+
+    if (hasValidId && authorId == currentUserId) return true;
+    if (normalizedUser.isNotEmpty &&
+        authorName.trim().toLowerCase() == normalizedUser) {
+      return true;
     }
 
-    return authorId == userId ||
-        (authorIds.isNotEmpty && authorIds.first == userId);
-  }
-
-  /// True when [userId] participated as checker, co-author, or secondary contributor
-  /// without being the primary creator.
-  bool isContributedBy(int? userId) {
-    if (userId == null || isCreatedBy(userId)) return false;
-    if (checkerId == userId) return true;
-    if (authorIds.contains(userId)) return true;
-    return authorEntries.any((e) => e.userId == userId);
-  }
-
-  /// Human-readable role badge for [userId] when [isContributedBy] is true.
-  String? contributionRoleFor(int? userId) {
-    if (userId == null) return null;
-    final roles = <String>[];
     for (final entry in authorEntries) {
-      if (entry.userId == userId && entry.authorRole.trim().isNotEmpty) {
-        roles.add(entry.authorRole.trim());
-      }
-    }
-    if (roles.isEmpty && authorIds.contains(userId)) {
-      roles.add('Co-Author');
-    }
-    if (checkerId == userId) {
-      roles.add('Checker');
-    }
-    if (roles.isEmpty) return null;
-    return roles.toSet().join(' • ');
-  }
-
-  static const Set<String> _knownKeys = {
-    'lp_id', 'id', 'pk', 'lp_title', 'title', 'name',
-    'learning_area', 'subject', 'subject_area',
-    'primary_language', 'suggested_demographic',
-    'school', 'school_name', 'teaching_date', 'quarter_term', 'quarter', 'term',
-    'time_sessions', 'duration', 'sessions',
-    'multigrade_model', 'shared_sub_theme', 'sub_theme',
-    'learner_context', 'l_context', 'reflection_questions', 'w_reflection_questions',
-    'notes_for_next_session', 'next_session_notes',
-    'description', 'overview',
-    'authors', 'author', 'author_detail', 'author_username', 'author_name',
-    'checker', 'checker_detail', 'checker_username', 'checker_name',
-    'is_approved', 'is_public', 'forked_from', 'fork_count',
-    'grade_levels', 'lesson_grade_levels',
-    'lesson_flows', 'flows', 'lesson_gradings', 'gradings', 'grading_tasks',
-    'materials', 'lesson_materials', 'is_pending_sync',
-  };
-
-  factory LessonPlan.fromJson(Map<String, dynamic> json) {
-    final parsedAuthors = _parseAuthors(json);
-    final checkerObj = json['checker_detail'] ?? json['checker'];
-    final int? cId = asNullableInt(checkerObj);
-    String cName = asString(json['checker_username'] ?? json['checker_name']);
-    if (checkerObj is Map<String, dynamic> && cName.isEmpty) {
-      final fn = asString(checkerObj['first_name']);
-      final ln = asString(checkerObj['last_name']);
-      final full = '$fn $ln'.trim();
-      cName = full.isNotEmpty ? full : asString(checkerObj['username']);
-    }
-
-    final extras = <String, dynamic>{};
-    json.forEach((key, value) {
-      if (!_knownKeys.contains(key) &&
-          value != null &&
-          value.toString().trim().isNotEmpty) {
-        extras[key] = value;
-      }
-    });
-
-    final parsedGradeLevels = parseModelList(
-      json['lesson_grade_levels'] ?? json['grade_levels'],
-      LessonGradeLevel.fromJson,
-    );
-
-    final lglLookup = <String, String>{
-      for (final gl in parsedGradeLevels)
-        gl.id: gl.gradeLevelName.isNotEmpty
-            ? gl.gradeLevelName
-            : 'Grade ${gl.gradeLevelId}',
-    };
-
-    var parsedFlows = parseModelList(
-      json['lesson_flows'] ?? json['flows'],
-      LessonFlow.fromJson,
-    );
-    if (parsedFlows.isEmpty) {
-      parsedFlows = parsedGradeLevels.expand((gl) => gl.flows).toList();
-    }
-    parsedFlows = parsedFlows.map((f) {
-      if (f.gradeLevelName.isEmpty &&
-          f.lessonGradeLevelId != null &&
-          lglLookup.containsKey(f.lessonGradeLevelId)) {
-        return f.copyWith(gradeLevelName: lglLookup[f.lessonGradeLevelId]!);
-      }
-      return f;
-    }).toList();
-
-    var parsedGradings = parseModelList(
-      json['lesson_gradings'] ?? json['grading_tasks'] ?? json['gradings'],
-      LessonGrading.fromJson,
-    );
-    if (parsedGradings.isEmpty) {
-      parsedGradings =
-          parsedGradeLevels.expand((gl) => gl.gradingTasks).toList();
-    }
-    parsedGradings = parsedGradings.map((g) {
-      if (g.gradeLevelName.isEmpty &&
-          g.lessonGradeLevelId != null &&
-          lglLookup.containsKey(g.lessonGradeLevelId)) {
-        return g.copyWith(gradeLevelName: lglLookup[g.lessonGradeLevelId]!);
-      }
-      return g;
-    }).toList();
-
-    var parsedMaterials = parseModelList(
-      json['materials'] ?? json['lesson_materials'],
-      LessonMaterial.fromJson,
-    );
-    if (parsedMaterials.isEmpty) {
-      parsedMaterials = parsedGradeLevels.expand((gl) => gl.materials).toList();
-    }
-    parsedMaterials = parsedMaterials.map((m) {
-      if (m.gradeLevelName.isEmpty &&
-          m.lessonGradeLevelId != null &&
-          lglLookup.containsKey(m.lessonGradeLevelId)) {
-        return m.copyWith(gradeLevelName: lglLookup[m.lessonGradeLevelId]!);
-      }
-      return m;
-    }).toList();
-
-    return LessonPlan(
-      id: asString(json['lp_id'] ?? json['id'] ?? json['pk']),
-      title: asString(json['lp_title'] ?? json['title'] ?? json['name']),
-      subject: asString(
-        json['learning_area'] ?? json['subject'] ?? json['subject_area'],
-      ),
-      primaryLanguage: asString(json['primary_language'], 'English'),
-      suggestedDemographic: asString(json['suggested_demographic']),
-      schoolName: asString(json['school_name'] ?? json['school']),
-      teachingDate: asString(json['teaching_date']),
-      quarterTerm: asString(
-        json['quarter_term'] ?? json['quarter'] ?? json['term'],
-      ),
-      timeSessions: asString(json['time_sessions'] ?? json['sessions']),
-      multigradeModel: asString(json['multigrade_model']),
-      sharedSubTheme: asString(json['shared_sub_theme'] ?? json['sub_theme']),
-      learnerContext: asString(json['learner_context'] ?? json['l_context']),
-      reflectionQuestions: asString(
-        json['reflection_questions'] ?? json['w_reflection_questions'],
-      ),
-      notesForNextSession: asString(
-        json['notes_for_next_session'] ?? json['next_session_notes'],
-      ),
-      description: asString(json['description'] ?? json['overview']),
-      authorId: parsedAuthors.primaryId,
-      authorName: parsedAuthors.displayNames,
-      authorEntries: parsedAuthors.entries,
-      authorIds: parsedAuthors.ids,
-      checkerId: cId,
-      checkerName: cName,
-      isApproved: asBool(json['is_approved']),
-      isPublic: asBool(json['is_public'], true),
-      forkedFromId: asNullableInt(json['forked_from']),
-      forkCount: asInt(json['fork_count']),
-      gradeLevels: parsedGradeLevels,
-      flows: parsedFlows,
-      gradings: parsedGradings,
-      materials: parsedMaterials,
-      extraFields: extras,
-      isPendingSync: asBool(json['is_pending_sync']),
-    );
-  }
-
-  static ({
-    int? primaryId,
-    String displayNames,
-    List<LessonAuthorEntry> entries,
-    List<int> ids,
-  }) _parseAuthors(Map<String, dynamic> json) {
-    int? aId;
-    String aName = asString(json['author_username'] ?? json['author_name']);
-    final ids = <int>[];
-    final entries = <LessonAuthorEntry>[];
-
-    final authorsList = json['authors'];
-    if (authorsList is List && authorsList.isNotEmpty) {
-      final names = <String>[];
-      for (final item in authorsList) {
-        if (item is Map<String, dynamic>) {
-          final role = asString(item['author_role'], 'Author');
-          final acct = item['account'];
-          if (acct is Map<String, dynamic>) {
-            final uid = asNullableInt(acct['id'] ?? acct['user_id']);
-            final uname = asString(acct['username']);
-            final full =
-                '${asString(acct['first_name'])} ${asString(acct['last_name'])}'
-                    .trim();
-            if (uid != null) {
-              ids.add(uid);
-              aId ??= uid;
-            }
-            if (uname.isNotEmpty || full.isNotEmpty) {
-              names.add(full.isNotEmpty ? full : uname);
-              entries.add(LessonAuthorEntry(
-                username: uname,
-                fullName: full,
-                authorRole: role,
-                userId: uid,
-              ));
-            }
-          } else {
-            final uid =
-                asNullableInt(item['account'] ?? item['user_id'] ?? item['id']);
-            final uname = asString(item['username']);
-            if (uid != null) {
-              ids.add(uid);
-              aId ??= uid;
-            }
-            if (uname.isNotEmpty) {
-              names.add(uname);
-              entries.add(LessonAuthorEntry(
-                username: uname,
-                authorRole: role,
-                userId: uid,
-              ));
-            }
-          }
+      final idMatch = hasValidId && entry.userId == currentUserId;
+      final nameMatch = normalizedUser.isNotEmpty &&
+          entry.username.trim().toLowerCase() == normalizedUser;
+      if (idMatch || nameMatch) {
+        final role = entry.authorRole.toLowerCase();
+        if (!role.contains('check') &&
+            !role.contains('review') &&
+            !role.contains('co-author') &&
+            !role.contains('contributor') &&
+            !role.contains('supporting')) {
+          return true;
         }
       }
-      if (names.isNotEmpty) aName = names.join(', ');
     }
 
-    final authorObj = json['author_detail'] ?? json['author'];
-    if (aId == null && authorObj != null) {
-      aId = asNullableInt(authorObj);
-      if (aId != null) ids.add(aId);
-      if (authorObj is Map<String, dynamic> && aName.isEmpty) {
-        aName = asString(authorObj['username']);
-      }
+    if (hasValidId &&
+        authorId == null &&
+        authorEntries.isEmpty &&
+        authorIds.isNotEmpty &&
+        authorIds.first == currentUserId) {
+      return true;
     }
-
-    return (primaryId: aId, displayNames: aName, entries: entries, ids: ids);
+    return false;
   }
 
-  Map<String, dynamic> toJson() => {
-        ...extraFields,
-        'lp_id': id,
-        'lp_title': title,
-        'learning_area': subject,
-        'primary_language': primaryLanguage,
-        'suggested_demographic': suggestedDemographic,
-        'school_name': schoolName,
-        'teaching_date': teachingDate,
-        'quarter_term': quarterTerm,
-        'time_sessions': timeSessions,
-        'multigrade_model': multigradeModel,
-        'shared_sub_theme': sharedSubTheme,
-        'learner_context': learnerContext,
-        'reflection_questions': reflectionQuestions,
-        'notes_for_next_session': notesForNextSession,
-        'description': description,
-        'author': authorId,
-        'author_username': authorName,
-        if (authorEntries.isNotEmpty)
-          'authors': authorEntries
-              .map((e) => {
-                    'author_role': e.authorRole,
-                    'account': {
-                      if (e.userId != null) 'id': e.userId,
-                      'username': e.username,
-                      'first_name': e.fullName,
-                    },
-                  })
-              .toList(),
-        'checker': checkerId,
-        'checker_username': checkerName,
-        'is_approved': isApproved,
-        'is_public': isPublic,
-        'forked_from': forkedFromId,
-        'fork_count': forkCount,
-        'lesson_grade_levels': gradeLevels.map((e) => e.toJson()).toList(),
-        'lesson_flows': flows.map((e) => e.toJson()).toList(),
-        'lesson_gradings': gradings.map((e) => e.toJson()).toList(),
-        'materials': materials.map((e) => e.toJson()).toList(),
-        'is_pending_sync': isPendingSync,
-      };
+  bool isContributedBy(int? currentUserId, {String? currentUsername}) {
+    if (isCreatedBy(currentUserId, currentUsername: currentUsername)) {
+      return false;
+    }
+    final hasValidId = currentUserId != null && currentUserId > 0;
+    final normalizedUser = currentUsername?.trim().toLowerCase() ?? '';
+    if (!hasValidId && normalizedUser.isEmpty) return false;
+
+    if (hasValidId && authorIds.contains(currentUserId)) return true;
+    if (authorEntries.any(
+      (e) =>
+          (hasValidId && e.userId == currentUserId) ||
+          (normalizedUser.isNotEmpty &&
+              e.username.trim().toLowerCase() == normalizedUser),
+    )) {
+      return true;
+    }
+    if (checkerEntries.any(
+      (e) =>
+          (hasValidId && e.userId == currentUserId) ||
+          (normalizedUser.isNotEmpty &&
+              e.username.trim().toLowerCase() == normalizedUser),
+    )) {
+      return true;
+    }
+    return false;
+  }
+
+  String? contributionRoleFor(int? currentUserId, {String? currentUsername}) {
+    if (isCreatedBy(currentUserId, currentUsername: currentUsername)) {
+      return null;
+    }
+    final hasValidId = currentUserId != null && currentUserId > 0;
+    final normalizedUser = currentUsername?.trim().toLowerCase() ?? '';
+    if (!hasValidId && normalizedUser.isEmpty) return null;
+
+    for (final entry in authorEntries) {
+      final matches = (hasValidId && entry.userId == currentUserId) ||
+          (normalizedUser.isNotEmpty &&
+              entry.username.trim().toLowerCase() == normalizedUser);
+      if (matches && entry.authorRole.isNotEmpty) {
+        return entry.authorRole;
+      }
+    }
+    for (final entry in checkerEntries) {
+      final matches = (hasValidId && entry.userId == currentUserId) ||
+          (normalizedUser.isNotEmpty &&
+              entry.username.trim().toLowerCase() == normalizedUser);
+      if (matches) {
+        return entry.authorRole.isNotEmpty ? entry.authorRole : 'Checker';
+      }
+    }
+    if (hasValidId && authorIds.contains(currentUserId)) return 'Contributor';
+    return null;
+  }
+
+  String firstNonEmpty(List<String> keys) {
+    for (final k in keys) {
+      final v = extraFields[k];
+      if (v != null && v.toString().trim().isNotEmpty) {
+        return v.toString().trim();
+      }
+    }
+    return '';
+  }
 
   LessonPlan copyWith({
     String? id,
+    int? serverId,
     String? title,
     String? subject,
     String? primaryLanguage,
     String? suggestedDemographic,
+    String? learningModelDescription,
+    String? intentionsDescription,
+    String? notes,
+    String? description,
     String? schoolName,
     String? teachingDate,
     String? quarterTerm,
     String? timeSessions,
-    String? multigradeModel,
-    String? sharedSubTheme,
     String? learnerContext,
     String? reflectionQuestions,
-    String? notesForNextSession,
-    String? description,
     int? authorId,
     String? authorName,
-    List<LessonAuthorEntry>? authorEntries,
     List<int>? authorIds,
-    int? checkerId,
+    List<LessonAuthorEntry>? authorEntries,
+    List<LessonAuthorEntry>? checkerEntries,
     String? checkerName,
-    bool? isApproved,
     bool? isPublic,
+    bool? isApproved,
     int? forkedFromId,
     int? forkCount,
     List<LessonGradeLevel>? gradeLevels,
@@ -437,31 +362,35 @@ class LessonPlan {
     List<LessonMaterial>? materials,
     Map<String, dynamic>? extraFields,
     bool? isPendingSync,
+    String? updatedAt,
   }) {
     return LessonPlan(
       id: id ?? this.id,
+      serverId: serverId ?? this.serverId,
       title: title ?? this.title,
       subject: subject ?? this.subject,
       primaryLanguage: primaryLanguage ?? this.primaryLanguage,
       suggestedDemographic: suggestedDemographic ?? this.suggestedDemographic,
+      learningModelDescription:
+          learningModelDescription ?? this.learningModelDescription,
+      intentionsDescription:
+          intentionsDescription ?? this.intentionsDescription,
+      notes: notes ?? this.notes,
+      description: description ?? this.description,
       schoolName: schoolName ?? this.schoolName,
       teachingDate: teachingDate ?? this.teachingDate,
       quarterTerm: quarterTerm ?? this.quarterTerm,
       timeSessions: timeSessions ?? this.timeSessions,
-      multigradeModel: multigradeModel ?? this.multigradeModel,
-      sharedSubTheme: sharedSubTheme ?? this.sharedSubTheme,
       learnerContext: learnerContext ?? this.learnerContext,
       reflectionQuestions: reflectionQuestions ?? this.reflectionQuestions,
-      notesForNextSession: notesForNextSession ?? this.notesForNextSession,
-      description: description ?? this.description,
       authorId: authorId ?? this.authorId,
       authorName: authorName ?? this.authorName,
-      authorEntries: authorEntries ?? this.authorEntries,
       authorIds: authorIds ?? this.authorIds,
-      checkerId: checkerId ?? this.checkerId,
+      authorEntries: authorEntries ?? this.authorEntries,
+      checkerEntries: checkerEntries ?? this.checkerEntries,
       checkerName: checkerName ?? this.checkerName,
-      isApproved: isApproved ?? this.isApproved,
       isPublic: isPublic ?? this.isPublic,
+      isApproved: isApproved ?? this.isApproved,
       forkedFromId: forkedFromId ?? this.forkedFromId,
       forkCount: forkCount ?? this.forkCount,
       gradeLevels: gradeLevels ?? this.gradeLevels,
@@ -470,8 +399,294 @@ class LessonPlan {
       materials: materials ?? this.materials,
       extraFields: extraFields ?? this.extraFields,
       isPendingSync: isPendingSync ?? this.isPendingSync,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  static const _knownKeys = <String>{
+    'lp_id',
+    'id',
+    'lp_title',
+    'title',
+    'learning_area',
+    'subject',
+    'primary_language',
+    'suggested_demographic',
+    'learning_model_description',
+    'multigrade_model',
+    'intentions_description',
+    'shared_sub_theme',
+    'notes',
+    'notes_for_next_session',
+    'description',
+    'school_name',
+    'school',
+    'teaching_date',
+    'date',
+    'quarter_term',
+    'quarter',
+    'time_sessions',
+    'time',
+    'learner_context',
+    'l_context',
+    'reflection_questions',
+    'w_reflection_questions',
+    'author',
+    'created_by',
+    'author_username',
+    'author_name',
+    'authors',
+    'checkers',
+    'checked_by',
+    'checker_name',
+    'is_public',
+    'is_approved',
+    'forked_from',
+    'forked_from_id',
+    'fork_count',
+    'differentiated_plans',
+    'grade_levels',
+    'lesson_grade_levels',
+    'flows',
+    'lesson_flows',
+    'gradings',
+    'lesson_gradings',
+    'materials',
+    'isPendingSync',
+    'updated_at',
+  };
+
+  factory LessonPlan.fromJson(Map<String, dynamic> json) {
+    final numericId = asNullableInt(json['lp_id'] ?? json['id']);
+    final rawId = json['lp_id'] ?? json['id'];
+
+    final entries = <LessonAuthorEntry>[];
+    final ids = <int>[];
+    final rawAuthors = json['authors'] ?? json['lesson_plan_authors'];
+    if (rawAuthors is List) {
+      for (final a in rawAuthors) {
+        if (a is Map) {
+          final entry =
+              LessonAuthorEntry.fromJson(Map<String, dynamic>.from(a));
+          entries.add(entry);
+          if (entry.userId != null && !ids.contains(entry.userId)) {
+            ids.add(entry.userId!);
+          }
+        } else {
+          final directId = asNullableInt(a);
+          if (directId != null && !ids.contains(directId)) {
+            ids.add(directId);
+          }
+        }
+      }
+    }
+
+    final checkers = <LessonAuthorEntry>[];
+    final rawCheckers = json['checkers'];
+    if (rawCheckers is List) {
+      for (final c in rawCheckers) {
+        if (c is Map) {
+          checkers.add(
+            LessonAuthorEntry.fromJson(Map<String, dynamic>.from(c)),
+          );
+        }
+      }
+    }
+
+    int? primaryAuthorId;
+    String resolvedAuthorName =
+        asString(json['author_username'] ?? json['author_name']);
+    final authorField = json['author'] ?? json['created_by'];
+    final directAuthorId = asNullableInt(authorField);
+    if (directAuthorId != null) {
+      primaryAuthorId = directAuthorId;
+    } else if (authorField is Map) {
+      final authorMap = Map<String, dynamic>.from(authorField);
+      primaryAuthorId = asNullableInt(
+        authorMap['id'] ?? authorMap['account_id'] ?? authorMap['pk'],
+      );
+      if (resolvedAuthorName.isEmpty) {
+        resolvedAuthorName = asString(
+          authorMap['username'] ?? authorMap['full_name'],
+        );
+      }
+    }
+
+    if (primaryAuthorId == null && entries.isNotEmpty) {
+      final primaryEntry = entries.firstWhere(
+        (e) =>
+            !e.authorRole.toLowerCase().contains('check') &&
+            !e.authorRole.toLowerCase().contains('review') &&
+            !e.authorRole.toLowerCase().contains('co-author') &&
+            !e.authorRole.toLowerCase().contains('contributor') &&
+            !e.authorRole.toLowerCase().contains('supporting'),
+        orElse: () => entries.first,
+      );
+      primaryAuthorId = primaryEntry.userId;
+    }
+    if (primaryAuthorId == null && ids.isNotEmpty) {
+      primaryAuthorId = ids.first;
+    }
+    if (resolvedAuthorName.isEmpty && entries.isNotEmpty) {
+      final primaryEntry = entries.firstWhere(
+        (e) =>
+            !e.authorRole.toLowerCase().contains('check') &&
+            !e.authorRole.toLowerCase().contains('review') &&
+            !e.authorRole.toLowerCase().contains('co-author') &&
+            !e.authorRole.toLowerCase().contains('contributor') &&
+            !e.authorRole.toLowerCase().contains('supporting'),
+        orElse: () => entries.first,
+      );
+      resolvedAuthorName = primaryEntry.username.isNotEmpty
+          ? primaryEntry.username
+          : primaryEntry.fullName;
+    }
+
+    String resolvedCheckerName = asString(json['checker_name']);
+    final checkerField = json['checked_by'];
+    if (resolvedCheckerName.isEmpty && checkerField is Map) {
+      final checkerMap = Map<String, dynamic>.from(checkerField);
+      resolvedCheckerName = asString(
+        checkerMap['full_name'] ?? checkerMap['username'],
+      );
+    }
+    if (resolvedCheckerName.isEmpty && checkers.isNotEmpty) {
+      resolvedCheckerName = checkers.first.fullName.isNotEmpty
+          ? checkers.first.fullName
+          : '@${checkers.first.username}';
+    }
+
+    final diffList = json['differentiated_plans'];
+    final rawGradeSource = (diffList is List && diffList.isNotEmpty)
+        ? diffList
+        : (json['lesson_grade_levels'] ?? json['grade_levels']);
+
+    final parsedGradeLevels = parseModelList(
+      rawGradeSource,
+      LessonGradeLevel.fromJson,
+    );
+
+    final topFlows = parseModelList(
+      json['lesson_flows'] ?? json['flows'],
+      LessonFlow.fromJson,
+    );
+    final nestedFlows = parsedGradeLevels.expand((g) => g.flows).toList();
+    final combinedFlows = topFlows.isNotEmpty ? topFlows : nestedFlows;
+
+    final topGradings = parseModelList(
+      json['lesson_gradings'] ?? json['gradings'],
+      LessonGrading.fromJson,
+    );
+    final nestedGradings =
+        parsedGradeLevels.expand((g) => g.gradingTasks).toList();
+    final combinedGradings =
+        topGradings.isNotEmpty ? topGradings : nestedGradings;
+
+    final topMaterials = parseModelList(
+      json['materials'],
+      LessonMaterial.fromJson,
+    );
+    final nestedMaterials =
+        parsedGradeLevels.expand((g) => g.materials).toList();
+    final combinedMaterials =
+        topMaterials.isNotEmpty ? topMaterials : nestedMaterials;
+
+    final rawExtra = json['extraFields'] is Map
+        ? Map<String, dynamic>.from(json['extraFields'] as Map)
+        : <String, dynamic>{};
+
+    for (final entry in json.entries) {
+      if (!_knownKeys.contains(entry.key) &&
+          entry.value != null &&
+          entry.value.toString().trim().isNotEmpty) {
+        rawExtra[entry.key] = entry.value;
+      }
+    }
+
+    final demographic = asString(json['suggested_demographic']);
+    final desc = asString(json['description']);
+
+    return LessonPlan(
+      id: numericId?.toString() ?? asString(rawId),
+      serverId: numericId,
+      title: asString(json['lp_title'] ?? json['title']),
+      subject: asString(json['learning_area'] ?? json['subject']),
+      primaryLanguage: asString(json['primary_language']),
+      suggestedDemographic: demographic,
+      learningModelDescription: asString(
+        json['learning_model_description'] ?? json['multigrade_model'],
+      ),
+      intentionsDescription: asString(
+        json['intentions_description'] ?? json['shared_sub_theme'],
+      ),
+      notes: asString(json['notes'] ?? json['notes_for_next_session']),
+      description: desc.isNotEmpty ? desc : demographic,
+      schoolName: asString(json['school_name'] ?? json['school']),
+      teachingDate: asString(json['teaching_date'] ?? json['date']),
+      quarterTerm: asString(json['quarter_term'] ?? json['quarter']),
+      timeSessions: asString(json['time_sessions'] ?? json['time']),
+      learnerContext: asString(json['learner_context'] ?? json['l_context']),
+      reflectionQuestions: asString(
+        json['reflection_questions'] ?? json['w_reflection_questions'],
+      ),
+      authorId: primaryAuthorId,
+      authorName: resolvedAuthorName,
+      authorIds: ids,
+      authorEntries: entries,
+      checkerEntries: checkers,
+      checkerName: resolvedCheckerName,
+      isPublic: json['is_public'] is bool ? json['is_public'] as bool : true,
+      isApproved:
+          json['is_approved'] is bool ? json['is_approved'] as bool : false,
+      forkedFromId:
+          asNullableInt(json['forked_from'] ?? json['forked_from_id']),
+      forkCount: asInt(json['fork_count']),
+      gradeLevels: parsedGradeLevels,
+      flows: combinedFlows,
+      gradings: combinedGradings,
+      materials: combinedMaterials,
+      extraFields: rawExtra,
+      isPendingSync: json['isPendingSync'] == true,
+      updatedAt: json['updated_at']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'lp_id': serverId ?? id,
+        'lp_title': title,
+        'learning_area': subject,
+        'primary_language': primaryLanguage,
+        'suggested_demographic': suggestedDemographic,
+        'learning_model_description': learningModelDescription,
+        'intentions_description': intentionsDescription,
+        'notes': notes,
+        'description': description,
+        'school_name': schoolName,
+        'teaching_date': teachingDate,
+        'quarter_term': quarterTerm,
+        'time_sessions': timeSessions,
+        'learner_context': learnerContext,
+        'reflection_questions': reflectionQuestions,
+        'author': authorId,
+        'author_username': authorName,
+        'authors': authorEntries.isNotEmpty
+            ? authorEntries.map((e) => e.toJson()).toList()
+            : authorIds,
+        if (checkerEntries.isNotEmpty)
+          'checkers': checkerEntries.map((e) => e.toJson()).toList(),
+        'checker_name': checkerName,
+        'is_public': isPublic,
+        'is_approved': isApproved,
+        'forked_from': forkedFromId,
+        'fork_count': forkCount,
+        'differentiated_plans': gradeLevels.map((e) => e.toJson()).toList(),
+        'lesson_flows': flows.map((e) => e.toJson()).toList(),
+        'lesson_gradings': gradings.map((e) => e.toJson()).toList(),
+        'materials': materials.map((e) => e.toJson()).toList(),
+        if (extraFields.isNotEmpty) 'extraFields': extraFields,
+        'isPendingSync': isPendingSync,
+        'updated_at': updatedAt,
+      };
 
   static String encodeList(List<LessonPlan> items) =>
       jsonEncode(items.map((e) => e.toJson()).toList());

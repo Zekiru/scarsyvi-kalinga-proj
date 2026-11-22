@@ -7,77 +7,143 @@ class LessonPlanCard extends StatelessWidget {
     required this.plan,
     required this.onTap,
     this.roleBadge,
+    this.currentUserId,
+    this.currentUsername,
   });
 
   final LessonPlan plan;
   final VoidCallback onTap;
   final String? roleBadge;
+  final int? currentUserId;
+  final String? currentUsername;
 
   @override
   Widget build(BuildContext context) {
-    final gradesSummary = plan.gradeLevels
-        .map((g) => g.gradeLevelName)
-        .where((n) => n.isNotEmpty)
-        .join(', ');
-
-    final metaParts = <String>[
-      if (plan.subject.isNotEmpty) plan.subject,
-      if (plan.primaryLanguage.isNotEmpty) plan.primaryLanguage,
-      if (gradesSummary.isNotEmpty) gradesSummary,
-      if (plan.authorName.isNotEmpty) 'by ${plan.authorName}',
-    ];
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final authorLabel = plan.primaryAuthorDisplay(
+      currentUserId: currentUserId,
+      currentUsername: currentUsername,
+    );
 
     return Card(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        title: Text(
-          plan.title.isNotEmpty
-              ? plan.title
-              : 'Untitled Lesson Plan #${plan.id}',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (metaParts.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(metaParts.join(' • ')),
-              ),
-            if (plan.suggestedDemographic.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  plan.suggestedDemographic,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-          ],
-        ),
-        trailing: Wrap(
-          spacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            if (roleBadge != null && roleBadge!.isNotEmpty)
-              Chip(
-                label: Text(roleBadge!),
-                avatar: const Icon(Icons.rate_review_outlined, size: 16),
-                visualDensity: VisualDensity.compact,
-              ),
-            if (plan.isPendingSync || plan.isLocalDraft)
-              const Chip(
-                label: Text('Queued'),
-                avatar: Icon(Icons.schedule, size: 16),
-              )
-            else if (plan.isApproved)
-              const Chip(
-                label: Text('Approved'),
-                avatar: Icon(Icons.verified_outlined, size: 16),
-              ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      plan.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (plan.isPendingSync)
+                    const Chip(
+                      avatar: Icon(Icons.sync, size: 16),
+                      label: Text('Pending Sync'),
+                      visualDensity: VisualDensity.compact,
+                    )
+                  else if (plan.isApproved)
+                    Chip(
+                      avatar: Icon(
+                        Icons.verified,
+                        size: 16,
+                        color: colors.primary,
+                      ),
+                      label: const Text('Approved'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+              if (authorLabel.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 14,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Made by $authorLabel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (plan.subject.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                      label: Text(plan.subject),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (plan.primaryLanguage.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(Icons.translate, size: 16),
+                      label: Text(plan.primaryLanguage),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (plan.forkedFromId != null)
+                    const Chip(
+                      avatar: Icon(Icons.fork_right, size: 16),
+                      label: Text('Forked'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (roleBadge != null && roleBadge!.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(Icons.badge_outlined, size: 16),
+                      label: Text(roleBadge!),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ...plan.gradeLevels.map(
+                    (gl) => Chip(
+                      label: Text(
+                        gl.gradeLevelName.isNotEmpty
+                            ? gl.gradeLevelName
+                            : 'Grade ${gl.gradeLevelId}',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+              if (plan.suggestedDemographic.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  plan.suggestedDemographic,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

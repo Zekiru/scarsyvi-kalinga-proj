@@ -6,10 +6,16 @@ import '../../data/curriculum_repository.dart';
 import '../../providers/curriculum_provider.dart';
 
 class GradeLevelsTab extends ConsumerWidget {
-  const GradeLevelsTab({super.key, required this.plan, required this.canEdit});
+  const GradeLevelsTab({
+    super.key,
+    required this.plan,
+    required this.canEdit,
+    this.canDelete = false,
+  });
 
   final LessonPlan plan;
   final bool canEdit;
+  final bool canDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -62,31 +68,70 @@ class GradeLevelsTab extends ConsumerWidget {
                                 padding: EdgeInsets.only(left: 6),
                                 child: Chip(label: Text('Queued')),
                               ),
+                            if (canEdit)
+                              IconButton(
+                                tooltip: 'Edit Grade Level & Standards',
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                onPressed: () => _gradeDialog(
+                                  context,
+                                  ref,
+                                  existing: item,
+                                ),
+                              ),
+                            if (canDelete)
+                              IconButton(
+                                tooltip: 'Delete Grade Level',
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                onPressed: () =>
+                                    _confirmDelete(context, ref, item, title),
+                              ),
                           ],
                         ),
                         if (item.contentStandard.isNotEmpty) ...[
                           const SizedBox(height: 10),
-                          _LabeledBlock('Content Standard (I)', item.contentStandard),
+                          _LabeledBlock(
+                            'Content Standard (I)',
+                            item.contentStandard,
+                          ),
                         ],
                         if (item.performanceStandard.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          _LabeledBlock('Performance Standard (I)', item.performanceStandard),
+                          _LabeledBlock(
+                            'Performance Standard (I)',
+                            item.performanceStandard,
+                          ),
                         ],
                         if (item.learningCompetencies.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          _LabeledBlock('Competencies & Codes (I)', item.learningCompetencies),
+                          _LabeledBlock(
+                            'Competencies & Codes (I)',
+                            item.learningCompetencies,
+                          ),
                         ],
                         if (item.learningObjectives.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          _LabeledBlock('Learning Objectives (I)', item.learningObjectives),
+                          _LabeledBlock(
+                            'Learning Objectives (I)',
+                            item.learningObjectives,
+                          ),
                         ],
                         if (item.learnerContext.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          _LabeledBlock('Learner Context (L)', item.learnerContext),
+                          _LabeledBlock(
+                            'Learner Context (L)',
+                            item.learnerContext,
+                          ),
                         ],
                         if (item.reflectionQuestions.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          _LabeledBlock('Reflection Questions (W)', item.reflectionQuestions),
+                          _LabeledBlock(
+                            'Reflection Questions (W)',
+                            item.reflectionQuestions,
+                          ),
                         ],
                         if (item.remediation.isNotEmpty) ...[
                           const SizedBox(height: 8),
@@ -104,32 +149,91 @@ class GradeLevelsTab extends ConsumerWidget {
             ),
       floatingActionButton: canEdit
           ? FloatingActionButton(
-              onPressed: () => _addGradeDialog(context, ref),
+              onPressed: () => _gradeDialog(context, ref),
               child: const Icon(Icons.add),
             )
           : null,
     );
   }
 
-  Future<void> _addGradeDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    LessonGradeLevel item,
+    String title,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Grade Level?'),
+        content: Text(
+          'Remove "$title" and its standards from this lesson plan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(curriculumRepositoryProvider).deleteLessonGradeLevel(
+          lessonPlanId: plan.id,
+          lessonGradeLevelId: item.id,
+        );
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(plan.id));
+  }
+
+  Future<void> _gradeDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    LessonGradeLevel? existing,
+  }) async {
     final levels = await ref.read(gradeLevelsProvider.future);
     if (!context.mounted || levels.isEmpty) return;
 
-    GradeLevel selected = levels.first;
-    final contentCtrl = TextEditingController();
-    final perfCtrl = TextEditingController();
-    final compCtrl = TextEditingController();
-    final objCtrl = TextEditingController();
-    final contextCtrl = TextEditingController();
-    final reflectCtrl = TextEditingController();
-    final remCtrl = TextEditingController();
-    final enrichCtrl = TextEditingController();
+    GradeLevel selected = existing != null
+        ? levels.firstWhere(
+            (g) => g.id == existing.gradeLevelId,
+            orElse: () => levels.first,
+          )
+        : levels.first;
+
+    final contentCtrl =
+        TextEditingController(text: existing?.contentStandard ?? '');
+    final perfCtrl =
+        TextEditingController(text: existing?.performanceStandard ?? '');
+    final compCtrl =
+        TextEditingController(text: existing?.learningCompetencies ?? '');
+    final objCtrl =
+        TextEditingController(text: existing?.learningObjectives ?? '');
+    final contextCtrl =
+        TextEditingController(text: existing?.learnerContext ?? '');
+    final reflectCtrl =
+        TextEditingController(text: existing?.reflectionQuestions ?? '');
+    final remCtrl = TextEditingController(text: existing?.remediation ?? '');
+    final enrichCtrl = TextEditingController(text: existing?.enrichment ?? '');
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Attach Grade Level & Standards'),
+          title: Text(
+            existing == null
+                ? 'Attach Grade Level & Standards'
+                : 'Edit Grade Level & Standards',
+          ),
           content: SizedBox(
             width: 480,
             child: SingleChildScrollView(
@@ -143,7 +247,9 @@ class GradeLevelsTab extends ConsumerWidget {
                       border: OutlineInputBorder(),
                     ),
                     items: levels
-                        .map((g) => DropdownMenuItem(value: g, child: Text(g.name)))
+                        .map(
+                          (g) => DropdownMenuItem(value: g, child: Text(g.name)),
+                        )
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => selected = val);
@@ -163,7 +269,8 @@ class GradeLevelsTab extends ConsumerWidget {
                     controller: perfCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Performance Standard (i_performance_standard)',
+                      labelText:
+                          'Performance Standard (i_performance_standard)',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -198,7 +305,8 @@ class GradeLevelsTab extends ConsumerWidget {
                     controller: reflectCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Reflection Questions (w_reflection_questions)',
+                      labelText:
+                          'Reflection Questions (w_reflection_questions)',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -231,26 +339,42 @@ class GradeLevelsTab extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () async {
-                await ref
-                    .read(curriculumRepositoryProvider)
-                    .addLessonGradeLevel(
-                      lessonPlanId: plan.id,
-                      gradeLevelId: selected.id,
-                      gradeLevelName: selected.name,
-                      contentStandard: contentCtrl.text,
-                      performanceStandard: perfCtrl.text,
-                      learningCompetencies: compCtrl.text,
-                      specificObjectives: objCtrl.text,
-                      learnerContext: contextCtrl.text,
-                      reflectionQuestions: reflectCtrl.text,
-                      remediation: remCtrl.text,
-                      enrichment: enrichCtrl.text,
-                    );
+                final repo = ref.read(curriculumRepositoryProvider);
+                if (existing == null) {
+                  await repo.addLessonGradeLevel(
+                    lessonPlanId: plan.id,
+                    gradeLevelId: selected.id,
+                    gradeLevelName: selected.name,
+                    contentStandard: contentCtrl.text,
+                    performanceStandard: perfCtrl.text,
+                    learningCompetencies: compCtrl.text,
+                    specificObjectives: objCtrl.text,
+                    learnerContext: contextCtrl.text,
+                    reflectionQuestions: reflectCtrl.text,
+                    remediation: remCtrl.text,
+                    enrichment: enrichCtrl.text,
+                  );
+                } else {
+                  await repo.updateLessonGradeLevel(
+                    lessonPlanId: plan.id,
+                    existing: existing,
+                    gradeLevelId: selected.id,
+                    gradeLevelName: selected.name,
+                    contentStandard: contentCtrl.text,
+                    performanceStandard: perfCtrl.text,
+                    learningCompetencies: compCtrl.text,
+                    specificObjectives: objCtrl.text,
+                    learnerContext: contextCtrl.text,
+                    reflectionQuestions: reflectCtrl.text,
+                    remediation: remCtrl.text,
+                    enrichment: enrichCtrl.text,
+                  );
+                }
                 ref.read(syncStatusProvider.notifier).refreshCounts();
                 ref.invalidate(lessonPlanDetailProvider(plan.id));
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              child: const Text('Add'),
+              child: Text(existing == null ? 'Add' : 'Save'),
             ),
           ],
         ),

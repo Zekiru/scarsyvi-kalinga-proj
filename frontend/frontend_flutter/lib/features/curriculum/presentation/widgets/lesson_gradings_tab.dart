@@ -5,13 +5,17 @@ import '../../data/curriculum_models.dart';
 import '../../data/curriculum_repository.dart';
 import '../../providers/curriculum_provider.dart';
 
-/// Displays LessonGrading tasks (`lg_id`, `lesson_grade_level`, `task_name`,
-/// `task_description`, `grade_weight`, `max_score`).
 class LessonGradingsTab extends ConsumerStatefulWidget {
-  const LessonGradingsTab({super.key, required this.plan, required this.canEdit});
+  const LessonGradingsTab({
+    super.key,
+    required this.plan,
+    required this.canEdit,
+    this.canDelete = false,
+  });
 
   final LessonPlan plan;
   final bool canEdit;
+  final bool canDelete;
 
   @override
   ConsumerState<LessonGradingsTab> createState() => _LessonGradingsTabState();
@@ -31,7 +35,9 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
 
     return Scaffold(
       body: allTasks.isEmpty
-          ? const Center(child: Text('No assessment / grading tasks defined yet.'))
+          ? const Center(
+              child: Text('No assessment / grading tasks defined yet.'),
+            )
           : Column(
               children: [
                 if (widget.plan.gradeLevels.length > 1)
@@ -92,6 +98,31 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                   ),
                                   if (task.isPendingSync)
                                     const Chip(label: Text('Queued')),
+                                  if (widget.canEdit)
+                                    IconButton(
+                                      tooltip: 'Edit Grading Task',
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => _gradingDialog(
+                                        context,
+                                        ref,
+                                        existing: task,
+                                      ),
+                                    ),
+                                  if (widget.canDelete)
+                                    IconButton(
+                                      tooltip: 'Delete Grading Task',
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        size: 20,
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                      ),
+                                      onPressed: () =>
+                                          _confirmDelete(context, ref, task),
+                                    ),
                                 ],
                               ),
                               const SizedBox(height: 6),
@@ -106,7 +137,8 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                     ),
                                   if (task.gradeWeight > 0)
                                     Chip(
-                                      avatar: const Icon(Icons.percent, size: 14),
+                                      avatar:
+                                          const Icon(Icons.percent, size: 14),
                                       label: Text(
                                         'Weight: ${task.gradeWeight.toStringAsFixed(0)}%',
                                       ),
@@ -114,8 +146,12 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                     ),
                                   if (task.maxScore > 0)
                                     Chip(
-                                      avatar: const Icon(Icons.grade_outlined, size: 14),
-                                      label: Text('Max Score: ${task.maxScore} pts'),
+                                      avatar: const Icon(
+                                        Icons.grade_outlined,
+                                        size: 14,
+                                      ),
+                                      label:
+                                          Text('Max Score: ${task.maxScore} pts'),
                                       visualDensity: VisualDensity.compact,
                                     ),
                                 ],
@@ -135,34 +171,87 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
             ),
       floatingActionButton: widget.canEdit
           ? FloatingActionButton(
-              onPressed: () => _addGradingDialog(context, ref),
+              onPressed: () => _gradingDialog(context, ref),
               child: const Icon(Icons.add),
             )
           : null,
     );
   }
 
-  Future<void> _addGradingDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    LessonGrading task,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Grading Task?'),
+        content: Text('Delete "${task.taskName}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(curriculumRepositoryProvider).deleteLessonGrading(
+          lessonPlanId: widget.plan.id,
+          gradingId: task.id,
+        );
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
+  }
+
+  Future<void> _gradingDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    LessonGrading? existing,
+  }) async {
     if (widget.plan.gradeLevels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Attach a Grade Level first before adding grading tasks.'),
+          content:
+              Text('Attach a Grade Level first before adding grading tasks.'),
         ),
       );
       return;
     }
 
-    LessonGradeLevel selectedGrade = widget.plan.gradeLevels.first;
-    final nameCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final weightCtrl = TextEditingController(text: '40');
-    final maxScoreCtrl = TextEditingController(text: '10');
+    LessonGradeLevel selectedGrade = existing != null
+        ? widget.plan.gradeLevels.firstWhere(
+            (g) => g.id == existing.lessonGradeLevelId,
+            orElse: () => widget.plan.gradeLevels.first,
+          )
+        : widget.plan.gradeLevels.first;
+
+    final nameCtrl = TextEditingController(text: existing?.taskName ?? '');
+    final descCtrl =
+        TextEditingController(text: existing?.taskDescription ?? '');
+    final weightCtrl = TextEditingController(
+      text: existing != null ? existing.gradeWeight.toStringAsFixed(0) : '40',
+    );
+    final maxScoreCtrl =
+        TextEditingController(text: '${existing?.maxScore ?? 10}');
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add Grading Task'),
+          title: Text(
+            existing == null ? 'Add Grading Task' : 'Edit Grading Task',
+          ),
           content: SizedBox(
             width: 440,
             child: Column(
@@ -244,15 +333,29 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
             FilledButton(
               onPressed: () async {
                 if (nameCtrl.text.trim().isEmpty) return;
-                await ref.read(curriculumRepositoryProvider).addLessonGrading(
-                      lessonPlanId: widget.plan.id,
-                      lessonGradeLevelId: selectedGrade.id,
-                      gradeLevelName: selectedGrade.gradeLevelName,
-                      taskName: nameCtrl.text,
-                      taskDescription: descCtrl.text,
-                      gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
-                      maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
-                    );
+                final repo = ref.read(curriculumRepositoryProvider);
+                if (existing == null) {
+                  await repo.addLessonGrading(
+                    lessonPlanId: widget.plan.id,
+                    lessonGradeLevelId: selectedGrade.id,
+                    gradeLevelName: selectedGrade.gradeLevelName,
+                    taskName: nameCtrl.text,
+                    taskDescription: descCtrl.text,
+                    gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
+                    maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
+                  );
+                } else {
+                  await repo.updateLessonGrading(
+                    lessonPlanId: widget.plan.id,
+                    existing: existing,
+                    lessonGradeLevelId: selectedGrade.id,
+                    gradeLevelName: selectedGrade.gradeLevelName,
+                    taskName: nameCtrl.text,
+                    taskDescription: descCtrl.text,
+                    gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
+                    maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
+                  );
+                }
                 ref.read(syncStatusProvider.notifier).refreshCounts();
                 ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
                 if (ctx.mounted) Navigator.pop(ctx);

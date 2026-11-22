@@ -1,6 +1,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -13,7 +14,7 @@ from .models import (
     LessonGrading,
 )
 from .pagination import LessonPlanPagination
-from .permissions import IsCurriculumEditorOrReadOnly
+from .permissions import IsCurriculumEditorOrReadOnly, is_lesson_plan_editor
 from .selectors import (
     get_grade_level_queryset,
     get_material_queryset,
@@ -87,6 +88,7 @@ class LessonPlanViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lp = create_lesson_plan(author=request.user, validated_data=serializer.validated_data)
+        lp = self.get_queryset().get(pk=lp.pk)
         output = LessonPlanDetailSerializer(lp, context={'request': request})
         return Response(output.data, status=status.HTTP_201_CREATED)
 
@@ -102,6 +104,7 @@ class LessonPlanViewSet(viewsets.ModelViewSet):
             new_author=request.user,
             custom_title=serializer.validated_data.get('lp_title'),
         )
+        cloned_lp = self.get_queryset().get(pk=cloned_lp.pk)
         output = LessonPlanDetailSerializer(cloned_lp, context={'request': request})
         return Response(output.data, status=status.HTTP_201_CREATED)
 
@@ -130,26 +133,50 @@ class LessonGradeLevelViewSet(viewsets.ModelViewSet):
             return LessonGradeLevelWriteSerializer
         return LessonGradeLevelDetailSerializer
 
+    def perform_create(self, serializer):
+        lp = serializer.validated_data['lp']
+        if not is_lesson_plan_editor(self.request.user, lp):
+            raise PermissionDenied("You do not have permission to modify this lesson plan.")
+        serializer.save()
+
 
 class LessonGradeMaterialViewSet(viewsets.ModelViewSet):
-    queryset = LessonGradeMaterial.objects.select_related('lesson_grade_level', 'material').all()
+    queryset = LessonGradeMaterial.objects.select_related('lesson_grade_level__lp', 'material').all()
     serializer_class = LessonGradeMaterialSerializer
     permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['lesson_grade_level', 'material']
 
+    def perform_create(self, serializer):
+        lp = serializer.validated_data['lesson_grade_level'].lp
+        if not is_lesson_plan_editor(self.request.user, lp):
+            raise PermissionDenied("You do not have permission to modify this lesson plan.")
+        serializer.save()
+
 
 class LessonFlowViewSet(viewsets.ModelViewSet):
-    queryset = LessonFlow.objects.select_related('lesson_grade_level').order_by('lf_id')
+    queryset = LessonFlow.objects.select_related('lesson_grade_level__lp').order_by('lf_id')
     serializer_class = LessonFlowSerializer
     permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['lesson_grade_level', 'stage']
 
+    def perform_create(self, serializer):
+        lp = serializer.validated_data['lesson_grade_level'].lp
+        if not is_lesson_plan_editor(self.request.user, lp):
+            raise PermissionDenied("You do not have permission to modify this lesson plan.")
+        serializer.save()
+
 
 class LessonGradingViewSet(viewsets.ModelViewSet):
-    queryset = LessonGrading.objects.select_related('lesson_grade_level').order_by('lg_id')
+    queryset = LessonGrading.objects.select_related('lesson_grade_level__lp').order_by('lg_id')
     serializer_class = LessonGradingSerializer
     permission_classes = [IsAuthenticated, IsCurriculumEditorOrReadOnly]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['lesson_grade_level']
+
+    def perform_create(self, serializer):
+        lp = serializer.validated_data['lesson_grade_level'].lp
+        if not is_lesson_plan_editor(self.request.user, lp):
+            raise PermissionDenied("You do not have permission to modify this lesson plan.")
+        serializer.save()

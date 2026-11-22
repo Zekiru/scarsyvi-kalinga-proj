@@ -6,8 +6,6 @@ import '../../data/curriculum_models.dart';
 import '../../data/curriculum_repository.dart';
 import '../../providers/curriculum_provider.dart';
 
-/// Opens a modal dialog to either edit an existing [LessonPlan] or create a new
-/// one sequentially: Base Plan -> Optional Grade Level -> Flow -> Grading -> Material.
 Future<LessonPlan?> showLessonPlanFormDialog(
   BuildContext context,
   WidgetRef ref, {
@@ -37,20 +35,15 @@ class _LessonPlanWizardDialogState
   LessonPlan? _activePlan;
   LessonGradeLevel? _createdGradeLevel;
 
-  // Step 0: Base LessonPlan controllers
   final _baseFormKey = GlobalKey<FormState>();
   late final TextEditingController _titleCtrl;
   late final TextEditingController _subjectCtrl;
   late final TextEditingController _langCtrl;
   late final TextEditingController _demoCtrl;
   late final TextEditingController _modelCtrl;
-  late final TextEditingController _themeCtrl;
-  late final TextEditingController _contextCtrl;
-  late final TextEditingController _reflectCtrl;
+  late final TextEditingController _intentionsCtrl;
   late final TextEditingController _notesCtrl;
-  late bool _isPublic;
 
-  // Step 1: Optional Grade Level controllers
   GradeLevel? _selectedGrade;
   final _iContentCtrl = TextEditingController();
   final _iPerfCtrl = TextEditingController();
@@ -61,18 +54,15 @@ class _LessonPlanWizardDialogState
   final _reRemCtrl = TextEditingController();
   final _reEnrichCtrl = TextEditingController();
 
-  // Step 2: Optional Lesson Flow controllers
   final _stageCtrl = TextEditingController();
   final _flowDescCtrl = TextEditingController();
   final _minsCtrl = TextEditingController(text: '10');
 
-  // Step 3: Optional Grading Task controllers
   final _taskNameCtrl = TextEditingController();
   final _taskDescCtrl = TextEditingController();
   final _weightCtrl = TextEditingController(text: '40');
   final _maxScoreCtrl = TextEditingController(text: '10');
 
-  // Step 4: Optional Material controllers
   final _matTitleCtrl = TextEditingController();
   final _matUrlCtrl = TextEditingController();
   final _matNotesCtrl = TextEditingController();
@@ -84,16 +74,42 @@ class _LessonPlanWizardDialogState
     super.initState();
     final p = widget.existingPlan;
     _activePlan = p;
-    _titleCtrl = TextEditingController(text: p?.title ?? '');
-    _subjectCtrl = TextEditingController(text: p?.subject ?? '');
-    _langCtrl = TextEditingController(text: p?.primaryLanguage ?? 'English');
-    _demoCtrl = TextEditingController(text: p?.suggestedDemographic ?? '');
-    _modelCtrl = TextEditingController(text: p?.multigradeModel ?? '');
-    _themeCtrl = TextEditingController(text: p?.sharedSubTheme ?? '');
-    _contextCtrl = TextEditingController(text: p?.learnerContext ?? '');
-    _reflectCtrl = TextEditingController(text: p?.reflectionQuestions ?? '');
-    _notesCtrl = TextEditingController(text: p?.notesForNextSession ?? '');
-    _isPublic = p?.isPublic ?? true;
+
+    String resolve(String primary, List<String> fallbackKeys) {
+      if (primary.trim().isNotEmpty) return primary;
+      if (p == null) return '';
+      return p.firstNonEmpty(fallbackKeys);
+    }
+
+    _titleCtrl = TextEditingController(
+      text: resolve(p?.title ?? '', ['lp_title', 'title']),
+    );
+    _subjectCtrl = TextEditingController(
+      text: resolve(p?.subject ?? '', ['learning_area', 'subject']),
+    );
+    _langCtrl = TextEditingController(
+      text: resolve(p?.primaryLanguage ?? '', ['primary_language']).isNotEmpty
+          ? resolve(p?.primaryLanguage ?? '', ['primary_language'])
+          : 'English',
+    );
+    _demoCtrl = TextEditingController(
+      text: resolve(p?.suggestedDemographic ?? '', ['suggested_demographic']),
+    );
+    _modelCtrl = TextEditingController(
+      text: resolve(
+        p?.learningModelDescription ?? '',
+        ['learning_model_description', 'multigrade_model'],
+      ),
+    );
+    _intentionsCtrl = TextEditingController(
+      text: resolve(
+        p?.intentionsDescription ?? '',
+        ['intentions_description', 'shared_sub_theme'],
+      ),
+    );
+    _notesCtrl = TextEditingController(
+      text: resolve(p?.notes ?? '', ['notes', 'notes_for_next_session']),
+    );
   }
 
   @override
@@ -103,9 +119,7 @@ class _LessonPlanWizardDialogState
     _langCtrl.dispose();
     _demoCtrl.dispose();
     _modelCtrl.dispose();
-    _themeCtrl.dispose();
-    _contextCtrl.dispose();
-    _reflectCtrl.dispose();
+    _intentionsCtrl.dispose();
     _notesCtrl.dispose();
     _iContentCtrl.dispose();
     _iPerfCtrl.dispose();
@@ -143,11 +157,8 @@ class _LessonPlanWizardDialogState
               primaryLanguage: _langCtrl.text,
               suggestedDemographic: _demoCtrl.text,
               multigradeModel: _modelCtrl.text,
-              sharedSubTheme: _themeCtrl.text,
-              learnerContext: _contextCtrl.text,
-              reflectionQuestions: _reflectCtrl.text,
+              sharedSubTheme: _intentionsCtrl.text,
               notesForNextSession: _notesCtrl.text,
-              isPublic: _isPublic,
             );
         if (mounted) Navigator.pop(context, updated);
         return;
@@ -161,15 +172,10 @@ class _LessonPlanWizardDialogState
             primaryLanguage: _langCtrl.text,
             suggestedDemographic: _demoCtrl.text,
             multigradeModel: _modelCtrl.text,
-            sharedSubTheme: _themeCtrl.text,
-            isPublic: _isPublic,
+            sharedSubTheme: _intentionsCtrl.text,
           );
 
-      final hasSharedNotes = _contextCtrl.text.trim().isNotEmpty ||
-          _reflectCtrl.text.trim().isNotEmpty ||
-          _notesCtrl.text.trim().isNotEmpty;
-
-      final finalPlan = hasSharedNotes
+      final finalPlan = _notesCtrl.text.trim().isNotEmpty
           ? await ref.read(lessonPlansProvider.notifier).updateLessonPlan(
                 lessonPlanId: created.id,
                 title: _titleCtrl.text,
@@ -177,11 +183,8 @@ class _LessonPlanWizardDialogState
                 primaryLanguage: _langCtrl.text,
                 suggestedDemographic: _demoCtrl.text,
                 multigradeModel: _modelCtrl.text,
-                sharedSubTheme: _themeCtrl.text,
-                learnerContext: _contextCtrl.text,
-                reflectionQuestions: _reflectCtrl.text,
+                sharedSubTheme: _intentionsCtrl.text,
                 notesForNextSession: _notesCtrl.text,
-                isPublic: _isPublic,
               )
           : created;
 
@@ -492,34 +495,18 @@ class _LessonPlanWizardDialogState
           const SizedBox(height: 12),
           TextFormField(
             controller: _modelCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Multigrade Model (Optional)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _themeCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Shared Sub-theme (Optional)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _contextCtrl,
             maxLines: 2,
             decoration: const InputDecoration(
-              labelText: 'Shared Learner Context (Optional)',
+              labelText: 'Learning Model Description (Optional)',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
           TextFormField(
-            controller: _reflectCtrl,
+            controller: _intentionsCtrl,
             maxLines: 2,
             decoration: const InputDecoration(
-              labelText: 'Shared Reflection Questions (Optional)',
+              labelText: 'Intentions Description (Optional)',
               border: OutlineInputBorder(),
             ),
           ),
@@ -528,16 +515,9 @@ class _LessonPlanWizardDialogState
             controller: _notesCtrl,
             maxLines: 2,
             decoration: const InputDecoration(
-              labelText: 'Notes for Next Session (Optional)',
+              labelText: 'Notes (Optional)',
               border: OutlineInputBorder(),
             ),
-          ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Public (Visible in Resource Center)'),
-            value: _isPublic,
-            onChanged: (val) => setState(() => _isPublic = val),
           ),
         ],
       ),
@@ -659,7 +639,7 @@ class _LessonPlanWizardDialogState
         TextField(
           controller: _stageCtrl,
           decoration: const InputDecoration(
-            labelText: 'Stage (e.g. Motivation, Instruction)',
+            labelText: 'Stage (e.g. Introduction, Instruction)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -697,7 +677,7 @@ class _LessonPlanWizardDialogState
         TextField(
           controller: _taskNameCtrl,
           decoration: const InputDecoration(
-            labelText: 'Task Name (e.g. Formative Exercise)',
+            labelText: 'Task Name (e.g. Tens and Ones Exit Ticket)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -747,7 +727,7 @@ class _LessonPlanWizardDialogState
         TextField(
           controller: _matTitleCtrl,
           decoration: const InputDecoration(
-            labelText: 'Instructional Material / Reference Title',
+            labelText: 'Material File Name / Title',
             border: OutlineInputBorder(),
           ),
         ),
@@ -755,7 +735,7 @@ class _LessonPlanWizardDialogState
         TextField(
           controller: _matUrlCtrl,
           decoration: const InputDecoration(
-            labelText: 'Resource URL / Reference Code (Optional)',
+            labelText: 'File URL (Optional)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -764,7 +744,7 @@ class _LessonPlanWizardDialogState
           controller: _matNotesCtrl,
           maxLines: 2,
           decoration: const InputDecoration(
-            labelText: 'Preparation Notes (Optional)',
+            labelText: 'Usage Instructions / Description (Optional)',
             border: OutlineInputBorder(),
           ),
         ),

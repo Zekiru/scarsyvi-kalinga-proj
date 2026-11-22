@@ -14,10 +14,6 @@ from .models import (
 )
 
 
-# ==========================================
-# MASTER REFERENCE SERIALIZERS
-# ==========================================
-
 class GradeLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeLevel
@@ -38,24 +34,24 @@ class MaterialSerializer(serializers.ModelSerializer):
         )
 
 
-# ==========================================
-# JUNCTION & DIFFERENTIATED CHILD SERIALIZERS
-# ==========================================
-
 class LpAuthorSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source='pk', read_only=True)
+    account_id = serializers.IntegerField(source='account.pk', read_only=True)
     account = AccountSummarySerializer(read_only=True)
 
     class Meta:
         model = LpAuthor
-        fields = ('id', 'account', 'author_role')
+        fields = ('id', 'account_id', 'account', 'author_role')
 
 
 class LpCheckerSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source='pk', read_only=True)
+    account_id = serializers.IntegerField(source='account.pk', read_only=True)
     account = AccountSummarySerializer(read_only=True)
 
     class Meta:
         model = LpChecker
-        fields = ('id', 'account', 'checker_role')
+        fields = ('id', 'account_id', 'account', 'checker_role')
 
 
 class LessonGradeMaterialSerializer(serializers.ModelSerializer):
@@ -126,13 +122,9 @@ class LessonGradeLevelWriteSerializer(serializers.ModelSerializer):
         )
 
 
-# ==========================================
-# LESSON PLAN READ & WRITE SERIALIZERS
-# ==========================================
-
 class LessonPlanListSerializer(serializers.ModelSerializer):
     grade_levels = GradeLevelSerializer(many=True, read_only=True)
-    authors = LpAuthorSerializer(source='lpauthor_set', many=True, read_only=True)
+    authors = serializers.SerializerMethodField()
     fork_count = serializers.IntegerField(source='forks.count', read_only=True)
 
     class Meta:
@@ -149,9 +141,13 @@ class LessonPlanListSerializer(serializers.ModelSerializer):
             'authors',
         )
 
+    def get_authors(self, obj):
+        qs = LpAuthor.objects.filter(lp=obj).select_related('account').order_by('pk')
+        return LpAuthorSerializer(qs, many=True).data
+
 
 class LessonPlanDetailSerializer(LessonPlanListSerializer):
-    checkers = LpCheckerSerializer(source='lpchecker_set', many=True, read_only=True)
+    checkers = serializers.SerializerMethodField()
     differentiated_plans = LessonGradeLevelDetailSerializer(
         source='lessongradelevel_set', many=True, read_only=True
     )
@@ -164,6 +160,10 @@ class LessonPlanDetailSerializer(LessonPlanListSerializer):
             'checkers',
             'differentiated_plans',
         )
+
+    def get_checkers(self, obj):
+        qs = LpChecker.objects.filter(lp=obj).select_related('account').order_by('pk')
+        return LpCheckerSerializer(qs, many=True).data
 
 
 class LessonPlanWriteSerializer(serializers.ModelSerializer):

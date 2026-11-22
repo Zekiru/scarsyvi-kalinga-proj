@@ -1,18 +1,30 @@
 import 'dart:convert';
+import '../../curriculum/data/models/json_parsers.dart';
 
 enum AccountRole {
-  admin('ADMIN'),
-  checker('CHECKER'),
-  teacher('TEACHER');
+  teacher,
+  checker,
+  admin;
 
-  const AccountRole(this.apiValue);
-  final String apiValue;
+  String get apiValue {
+    switch (this) {
+      case AccountRole.teacher:
+        return 'TEACHER';
+      case AccountRole.checker:
+        return 'CHECKER';
+      case AccountRole.admin:
+        return 'ADMIN';
+    }
+  }
 
-  static AccountRole fromString(String? value) {
-    switch (value?.toUpperCase()) {
+  static AccountRole fromApi(dynamic raw) {
+    final val = raw?.toString().trim().toUpperCase() ?? 'TEACHER';
+    switch (val) {
       case 'ADMIN':
+      case 'ADMINISTRATOR':
         return AccountRole.admin;
       case 'CHECKER':
+      case 'REVIEWER':
         return AccountRole.checker;
       case 'TEACHER':
       default:
@@ -25,12 +37,12 @@ class Account {
   const Account({
     required this.id,
     required this.username,
-    required this.email,
+    this.email = '',
     this.firstName = '',
     this.lastName = '',
-    required this.role,
     this.school = '',
-    this.isActive = true,
+    this.role = AccountRole.teacher,
+    this.roleDisplay = '',
   });
 
   final int id;
@@ -38,52 +50,70 @@ class Account {
   final String email;
   final String firstName;
   final String lastName;
-  final AccountRole role;
   final String school;
-  final bool isActive;
+  final AccountRole role;
+  final String roleDisplay;
 
-  String get fullName {
-    final combined = '$firstName $lastName'.trim();
-    return combined.isNotEmpty ? combined : username;
-  }
+  String get fullName => '$firstName $lastName'.trim();
 
-  bool get isAdmin => role == AccountRole.admin;
-  bool get isChecker => role == AccountRole.checker;
+  bool get canTeach =>
+      role == AccountRole.teacher ||
+      role == AccountRole.checker ||
+      role == AccountRole.admin;
 
-  /// Every role in Kalinga (TEACHER, CHECKER, ADMIN) inherits base teacher capabilities.
-  bool get canTeach => true;
+  bool get canModerate =>
+      role == AccountRole.checker || role == AccountRole.admin;
 
-  /// Checkers and Admins can review assigned lesson plans and moderate forums.
-  bool get canModerate => isAdmin || isChecker;
-
-  /// Only Admins can assign checkers or manage user accounts/roles.
-  bool get canAdminister => isAdmin;
+  bool get canAdminister => role == AccountRole.admin;
 
   factory Account.fromJson(Map<String, dynamic> json) {
+    final userObj = json['user'] is Map
+        ? Map<String, dynamic>.from(json['user'] as Map)
+        : (json['account'] is Map
+            ? Map<String, dynamic>.from(json['account'] as Map)
+            : json);
+
+    final rawRole = userObj['role'] ?? json['role'];
+    final parsedRole = AccountRole.fromApi(rawRole);
+
     return Account(
-      id: (json['id'] ?? json['user_id'] ?? json['pk']) as int,
-      username: (json['username'] ?? '') as String,
-      email: (json['email'] ?? '') as String,
-      firstName: (json['first_name'] ?? '') as String,
-      lastName: (json['last_name'] ?? '') as String,
-      role: AccountRole.fromString(json['role'] as String?),
-      school: (json['school'] ?? '') as String,
-      isActive: (json['is_active'] ?? true) as bool,
+      id: asInt(
+        userObj['id'] ??
+            userObj['account_id'] ??
+            userObj['user_id'] ??
+            userObj['pk'] ??
+            json['id'] ??
+            json['account_id'],
+      ),
+      username: asString(userObj['username'] ?? json['username']),
+      email: asString(userObj['email'] ?? json['email']),
+      firstName: asString(userObj['first_name'] ?? json['first_name']),
+      lastName: asString(userObj['last_name'] ?? json['last_name']),
+      school: asString(
+        userObj['school'] ??
+            userObj['school_name'] ??
+            json['school'] ??
+            json['school_name'],
+      ),
+      role: parsedRole,
+      roleDisplay: asString(
+        userObj['role_display'] ?? json['role_display'],
+        parsedRole.apiValue,
+      ),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'username': username,
-      'email': email,
-      'first_name': firstName,
-      'last_name': lastName,
-      'role': role.apiValue,
-      'school': school,
-      'is_active': isActive,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'account_id': id,
+        'username': username,
+        'email': email,
+        'first_name': firstName,
+        'last_name': lastName,
+        'school': school,
+        'role': role.apiValue,
+        'role_display': roleDisplay,
+      };
 
   String toJsonString() => jsonEncode(toJson());
 

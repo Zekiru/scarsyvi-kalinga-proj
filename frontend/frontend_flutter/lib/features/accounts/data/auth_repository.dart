@@ -80,7 +80,8 @@ class AuthRepository {
       throw ApiException(message: 'Unexpected authentication response format.');
     }
 
-    final token = response['token'] as String?;
+    final token =
+        (response['token'] ?? response['access'] ?? response['key']) as String?;
     if (token == null || token.isEmpty) {
       throw ApiException(message: 'Authentication token missing in response.');
     }
@@ -89,13 +90,28 @@ class AuthRepository {
         ? response['user'] as Map<String, dynamic>
         : response;
 
-    final account = Account.fromJson(userMap);
+    var account = Account.fromJson(userMap);
 
     await _tokenStorage.saveSession(
       token: token,
       userId: account.id,
       role: account.role.apiValue,
     );
+
+    if (account.id <= 0 || account.username.isEmpty) {
+      try {
+        final meResponse = await _apiClient.get(ApiEndpoints.me);
+        if (meResponse is Map<String, dynamic>) {
+          account = Account.fromJson(meResponse);
+          await _tokenStorage.saveSession(
+            token: token,
+            userId: account.id,
+            role: account.role.apiValue,
+          );
+        }
+      } catch (_) {}
+    }
+
     await _accountsBox.put(_currentUserKey, account.toJsonString());
 
     return account;
@@ -103,14 +119,14 @@ class AuthRepository {
 
   /// Restores session on app startup:
   /// 1. Returns `null` if no token is stored.
-  /// 2. Immediately returns cached Hive profile if available and refreshes `/accounts/me/` in background.
-  /// 3. If no cached profile exists yet, fetches `/accounts/me/` with a 5-second timeout.
+  /// 2. Immediately returns cached Hive profile if valid (`id > 0`) and refreshes `/accounts/me/` in background.
+  /// 3. If no valid cached profile exists yet, fetches `/accounts/me/` with a 5-second timeout.
   Future<Account?> restoreSession() async {
     final token = await _tokenStorage.getToken();
     if (token == null || token.isEmpty) return null;
 
     final cachedAccount = getCachedUser();
-    if (cachedAccount != null) {
+    if (cachedAccount != null && cachedAccount.id > 0) {
       Future.microtask(() async {
         try {
           final response = await _apiClient.get(ApiEndpoints.me);

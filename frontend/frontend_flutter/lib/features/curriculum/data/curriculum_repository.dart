@@ -28,9 +28,12 @@ class CurriculumRepository {
   final SyncQueueService _syncQueue;
   final CurriculumCacheStore _cache;
 
+  static const String _lessonGradeMaterialsEndpoint =
+      '/curriculum/lesson-grade-materials/';
+
   List<dynamic> _extractList(dynamic response) {
     if (response is List) return response;
-    if (response is Map<String, dynamic>) {
+    if (response is Map) {
       if (response['results'] is List) return response['results'] as List<dynamic>;
       if (response['data'] is List) return response['data'] as List<dynamic>;
       for (final val in response.values) {
@@ -52,7 +55,7 @@ class CurriculumRepository {
       final response = await _apiClient.get(nextUrl, queryParams: currentParams);
       items.addAll(_extractList(response));
 
-      if (response is Map<String, dynamic> && response['next'] is String) {
+      if (response is Map && response['next'] is String) {
         final rawNext = response['next'] as String;
         final apiIdx = rawNext.indexOf('/api/v1/');
         nextUrl = apiIdx >= 0 ? rawNext.substring(apiIdx + 7) : rawNext;
@@ -66,6 +69,29 @@ class CurriculumRepository {
 
   List<GradeLevel> getCachedGradeLevels() => _cache.getGradeLevels();
   List<LessonPlan> getCachedLessonPlans() => _cache.getLessonPlans();
+  Future<void> saveCachedLessonPlan(LessonPlan plan) => _cache.saveDetail(plan);
+
+  LessonPlan _preserveResolvedAuthors(LessonPlan incoming, LessonPlan? previous) {
+    if (previous == null) return incoming;
+    final hasResolvedIncoming = incoming.authorEntries.any(
+      (e) => e.username.trim().isNotEmpty || e.fullName.trim().isNotEmpty,
+    );
+    if (hasResolvedIncoming) return incoming;
+
+    final hasResolvedPrevious = previous.authorEntries.any(
+      (e) => e.username.trim().isNotEmpty || e.fullName.trim().isNotEmpty,
+    );
+    if (!hasResolvedPrevious) return incoming;
+
+    return incoming.copyWith(
+      authorId: incoming.authorId ?? previous.authorId,
+      authorName: previous.authorName,
+      authorIds: incoming.authorIds.isNotEmpty
+          ? incoming.authorIds
+          : previous.authorIds,
+      authorEntries: previous.authorEntries,
+    );
+  }
 
   Future<List<GradeLevel>> fetchGradeLevels() async {
     try {
@@ -89,9 +115,14 @@ class CurriculumRepository {
         },
       );
 
-      final serverPlans = parseModelList(raw, LessonPlan.fromJson);
+      final cachedPlans = _cache.getLessonPlans();
+      final cachedById = {for (final p in cachedPlans) p.id: p};
+
+      final serverPlans = parseModelList(raw, LessonPlan.fromJson)
+          .map((plan) => _preserveResolvedAuthors(plan, cachedById[plan.id]))
+          .toList();
       final unsyncedLocal =
-          _cache.getLessonPlans().where((p) => p.isLocalDraft).toList();
+          cachedPlans.where((p) => p.isLocalDraft).toList();
       final merged = [...unsyncedLocal, ...serverPlans];
 
       await _cache.saveLessonPlans(merged);
@@ -114,7 +145,9 @@ class CurriculumRepository {
     try {
       final response =
           await _apiClient.get(ApiEndpoints.lessonPlanDetail(serverId));
-      var plan = LessonPlan.fromJson(response as Map<String, dynamic>);
+      var plan = LessonPlan.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
 
       final needsGradeLevelsHydration = plan.gradeLevels.isEmpty ||
           plan.gradeLevels.any((g) => g.id.isEmpty) ||
@@ -132,6 +165,8 @@ class CurriculumRepository {
       }
 
       final existing = _cache.getLessonPlanDetail(id);
+      plan = _preserveResolvedAuthors(plan, existing);
+
       final merged = existing == null
           ? plan
           : plan.copyWith(
@@ -212,7 +247,8 @@ class CurriculumRepository {
       else
         Future.value(const <dynamic>[]),
       if (plan.materials.isEmpty && nestedMaterials.isEmpty)
-        _fetchAllItems(ApiEndpoints.materials).catchError((_) => <dynamic>[])
+        _fetchAllItems(_lessonGradeMaterialsEndpoint)
+            .catchError((_) => <dynamic>[])
       else
         Future.value(const <dynamic>[]),
     ]);
@@ -290,6 +326,8 @@ class CurriculumRepository {
     );
   }
 
+  // ---------------- LESSON PLAN CRUD ----------------
+
   Future<LessonPlan> createLessonPlan({
     required String title,
     required String subject,
@@ -307,16 +345,34 @@ class CurriculumRepository {
       'primary_language': primaryLanguage.trim(),
       'suggested_demographic': suggestedDemographic.trim(),
       if (multigradeModel.trim().isNotEmpty)
-        'multigrade_model': multigradeModel.trim(),
+        'learning_model_description': multigradeModel.trim(),
       if (sharedSubTheme.trim().isNotEmpty)
-        'shared_sub_theme': sharedSubTheme.trim(),
-      'is_public': isPublic,
+        'intentions_description': sharedSubTheme.trim(),
     };
 
     try {
       final response =
           await _apiClient.post(ApiEndpoints.lessonPlans, body: payload);
-      final created = LessonPlan.fromJson(response as Map<String, dynamic>);
+      var created = LessonPlan.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
+      if (created.authorEntries.isEmpty &&
+          authorId != null &&
+          authorName.trim().isNotEmpty) {
+        created = created.copyWith(
+          authorId: created.authorId ?? authorId,
+          authorName: authorName.trim(),
+          authorIds:
+              created.authorIds.isEmpty ? [authorId] : created.authorIds,
+          authorEntries: [
+            LessonAuthorEntry(
+              userId: authorId,
+              username: authorName.trim(),
+              authorRole: 'Primary Author',
+            ),
+          ],
+        );
+      }
       await _cache.saveDetail(created);
       return created;
     } on ApiException catch (e) {
@@ -329,12 +385,21 @@ class CurriculumRepository {
         subject: subject.trim(),
         primaryLanguage: primaryLanguage.trim(),
         suggestedDemographic: suggestedDemographic.trim(),
-        multigradeModel: multigradeModel.trim(),
-        sharedSubTheme: sharedSubTheme.trim(),
+        learningModelDescription: multigradeModel.trim(),
+        intentionsDescription: sharedSubTheme.trim(),
         description: suggestedDemographic.trim(),
         authorId: authorId,
         authorName: authorName,
         authorIds: authorId != null ? [authorId] : const [],
+        authorEntries: authorId != null
+            ? [
+                LessonAuthorEntry(
+                  userId: authorId,
+                  username: authorName,
+                  authorRole: 'Primary Author',
+                ),
+              ]
+            : const [],
         isPublic: isPublic,
         isPendingSync: true,
       );
@@ -370,17 +435,9 @@ class CurriculumRepository {
       'learning_area': subject.trim(),
       'primary_language': primaryLanguage.trim(),
       'suggested_demographic': suggestedDemographic.trim(),
-      'is_public': isPublic,
-      if (multigradeModel.trim().isNotEmpty)
-        'multigrade_model': multigradeModel.trim(),
-      if (sharedSubTheme.trim().isNotEmpty)
-        'shared_sub_theme': sharedSubTheme.trim(),
-      if (learnerContext.trim().isNotEmpty)
-        'learner_context': learnerContext.trim(),
-      if (reflectionQuestions.trim().isNotEmpty)
-        'reflection_questions': reflectionQuestions.trim(),
-      if (notesForNextSession.trim().isNotEmpty)
-        'notes_for_next_session': notesForNextSession.trim(),
+      'learning_model_description': multigradeModel.trim(),
+      'intentions_description': sharedSubTheme.trim(),
+      'notes': notesForNextSession.trim(),
     };
 
     final isTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
@@ -391,12 +448,21 @@ class CurriculumRepository {
         throw ApiException(message: 'Plan is local draft', isOffline: true);
       }
       final response = await _apiClient.patch(endpoint, body: payload);
-      final updated = LessonPlan.fromJson(response as Map<String, dynamic>);
+      final updated = LessonPlan.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
 
       final existing = _cache.getLessonPlanDetail(lessonPlanId);
       final merged = existing == null
           ? updated
           : updated.copyWith(
+              authorId: updated.authorId ?? existing.authorId,
+              authorName: updated.authorName.isNotEmpty
+                  ? updated.authorName
+                  : existing.authorName,
+              authorIds: updated.authorIds.isNotEmpty
+                  ? updated.authorIds
+                  : existing.authorIds,
               gradeLevels: updated.gradeLevels.isNotEmpty
                   ? updated.gradeLevels
                   : existing.gradeLevels,
@@ -407,6 +473,12 @@ class CurriculumRepository {
               materials: updated.materials.isNotEmpty
                   ? updated.materials
                   : existing.materials,
+              authorEntries: updated.authorEntries.isNotEmpty
+                  ? updated.authorEntries
+                  : existing.authorEntries,
+              checkerEntries: updated.checkerEntries.isNotEmpty
+                  ? updated.checkerEntries
+                  : existing.checkerEntries,
             );
 
       await _cache.saveDetail(merged);
@@ -429,11 +501,9 @@ class CurriculumRepository {
           subject: subject.trim(),
           primaryLanguage: primaryLanguage.trim(),
           suggestedDemographic: suggestedDemographic.trim(),
-          multigradeModel: multigradeModel.trim(),
-          sharedSubTheme: sharedSubTheme.trim(),
-          learnerContext: learnerContext.trim(),
-          reflectionQuestions: reflectionQuestions.trim(),
-          notesForNextSession: notesForNextSession.trim(),
+          learningModelDescription: multigradeModel.trim(),
+          intentionsDescription: sharedSubTheme.trim(),
+          notes: notesForNextSession.trim(),
           isPublic: isPublic,
           isPendingSync: true,
         );
@@ -466,6 +536,8 @@ class CurriculumRepository {
       await _cache.removeLessonPlan(lessonPlanId);
     }
   }
+
+  // ---------------- LESSON GRADE LEVEL CRUD ----------------
 
   Future<LessonGradeLevel> addLessonGradeLevel({
     required String lessonPlanId,
@@ -507,8 +579,9 @@ class CurriculumRepository {
       }
       final response =
           await _apiClient.post(ApiEndpoints.lessonGradeLevels, body: payload);
-      final created =
-          LessonGradeLevel.fromJson(response as Map<String, dynamic>);
+      final created = LessonGradeLevel.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
       await _cache.appendChild(lessonPlanId, gradeLevel: created);
       return created;
     } on ApiException catch (e) {
@@ -545,6 +618,106 @@ class CurriculumRepository {
     }
   }
 
+  Future<LessonGradeLevel> updateLessonGradeLevel({
+    required String lessonPlanId,
+    required LessonGradeLevel existing,
+    required int gradeLevelId,
+    required String gradeLevelName,
+    String contentStandard = '',
+    String performanceStandard = '',
+    String learningCompetencies = '',
+    String specificObjectives = '',
+    String learnerContext = '',
+    String reflectionQuestions = '',
+    String remediation = '',
+    String enrichment = '',
+  }) async {
+    final isTemp = existing.id.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-grade-levels/${existing.id}/';
+
+    final payload = <String, dynamic>{
+      'gl': gradeLevelId,
+      'i_content_standard': contentStandard.trim(),
+      'i_performance_standard': performanceStandard.trim(),
+      'i_competencies_codes': learningCompetencies.trim(),
+      'i_objectives': specificObjectives.trim(),
+      'l_context': learnerContext.trim(),
+      'w_reflection_questions': reflectionQuestions.trim(),
+      're_remediation': remediation.trim(),
+      're_enrichment': enrichment.trim(),
+    };
+
+    try {
+      if (isTemp) {
+        throw ApiException(message: 'Record is local draft', isOffline: true);
+      }
+      final response = await _apiClient.patch(endpoint, body: payload);
+      final updated = LessonGradeLevel.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      ).copyWith(
+        flows: existing.flows,
+        gradingTasks: existing.gradingTasks,
+        materials: existing.materials,
+      );
+      await _cache.replaceChild(lessonPlanId, gradeLevel: updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      final optimistic = existing.copyWith(
+        gradeLevelId: gradeLevelId,
+        gradeLevelName: gradeLevelName,
+        contentStandard: contentStandard.trim(),
+        performanceStandard: performanceStandard.trim(),
+        learningCompetencies: learningCompetencies.trim(),
+        learningObjectives: specificObjectives.trim(),
+        learnerContext: learnerContext.trim(),
+        reflectionQuestions: reflectionQuestions.trim(),
+        remediation: remediation.trim(),
+        enrichment: enrichment.trim(),
+        isPendingSync: true,
+      );
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_grade_level_update',
+        method: 'PATCH',
+        endpoint: endpoint,
+        payload: payload,
+        dependsOnTempIds: isTemp ? [existing.id] : const [],
+      );
+      await _cache.replaceChild(lessonPlanId, gradeLevel: optimistic);
+      return optimistic;
+    }
+  }
+
+  Future<void> deleteLessonGradeLevel({
+    required String lessonPlanId,
+    required String lessonGradeLevelId,
+  }) async {
+    final isTemp = lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-grade-levels/$lessonGradeLevelId/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _cache.removeChild(lessonPlanId, gradeLevelId: lessonGradeLevelId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_grade_level_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [lessonGradeLevelId] : const [],
+      );
+      await _cache.removeChild(lessonPlanId, gradeLevelId: lessonGradeLevelId);
+    }
+  }
+
+  // ---------------- LESSON FLOW CRUD ----------------
+
   Future<LessonFlow> addLessonFlow({
     required String lessonPlanId,
     required String lessonGradeLevelId,
@@ -571,8 +744,9 @@ class CurriculumRepository {
       }
       final response =
           await _apiClient.post(ApiEndpoints.lessonFlows, body: payload);
-      final created = LessonFlow.fromJson(response as Map<String, dynamic>)
-          .copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
+      final created = LessonFlow.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      ).copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
       await _cache.appendChild(lessonPlanId, flow: created);
       return created;
     } on ApiException catch (e) {
@@ -602,6 +776,96 @@ class CurriculumRepository {
     }
   }
 
+  Future<LessonFlow> updateLessonFlow({
+    required String lessonPlanId,
+    required LessonFlow existing,
+    required String lessonGradeLevelId,
+    String gradeLevelName = '',
+    required String stage,
+    required String description,
+    int timeMinutes = 10,
+  }) async {
+    final isTemp = existing.id.startsWith(IdMappingStore.tempPrefix);
+    final isLglTemp = lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-flows/${existing.id}/';
+
+    final payload = <String, dynamic>{
+      'lesson_grade_level':
+          isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
+      'time_minutes': timeMinutes,
+      'stage': stage.trim(),
+      'description': description.trim(),
+    };
+
+    try {
+      if (isTemp || isLglTemp) {
+        throw ApiException(message: 'Record is local draft', isOffline: true);
+      }
+      final response = await _apiClient.patch(endpoint, body: payload);
+      final updated = LessonFlow.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      ).copyWith(
+        lessonPlanId: lessonPlanId,
+        gradeLevelName: gradeLevelName,
+        stepOrder: existing.stepOrder,
+      );
+      await _cache.replaceChild(lessonPlanId, flow: updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      final optimistic = existing.copyWith(
+        lessonGradeLevelId: lessonGradeLevelId,
+        gradeLevelName: gradeLevelName,
+        stage: stage.trim(),
+        description: description.trim(),
+        timeMinutes: timeMinutes,
+        isPendingSync: true,
+      );
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_flow_update',
+        method: 'PATCH',
+        endpoint: endpoint,
+        payload: payload,
+        dependsOnTempIds: [
+          if (isTemp) existing.id,
+          if (isLglTemp) lessonGradeLevelId,
+        ],
+      );
+      await _cache.replaceChild(lessonPlanId, flow: optimistic);
+      return optimistic;
+    }
+  }
+
+  Future<void> deleteLessonFlow({
+    required String lessonPlanId,
+    required String flowId,
+  }) async {
+    final isTemp = flowId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-flows/$flowId/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _cache.removeChild(lessonPlanId, flowId: flowId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_flow_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [flowId] : const [],
+      );
+      await _cache.removeChild(lessonPlanId, flowId: flowId);
+    }
+  }
+
+  // ---------------- LESSON GRADING CRUD ----------------
+
   Future<LessonGrading> addLessonGrading({
     required String lessonPlanId,
     required String lessonGradeLevelId,
@@ -629,8 +893,9 @@ class CurriculumRepository {
       }
       final response =
           await _apiClient.post(ApiEndpoints.lessonGradings, body: payload);
-      final created = LessonGrading.fromJson(response as Map<String, dynamic>)
-          .copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
+      final created = LessonGrading.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      ).copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
       await _cache.appendChild(lessonPlanId, grading: created);
       return created;
     } on ApiException catch (e) {
@@ -660,39 +925,157 @@ class CurriculumRepository {
     }
   }
 
+  Future<LessonGrading> updateLessonGrading({
+    required String lessonPlanId,
+    required LessonGrading existing,
+    required String lessonGradeLevelId,
+    String gradeLevelName = '',
+    required String taskName,
+    String taskDescription = '',
+    required double gradeWeight,
+    int maxScore = 10,
+  }) async {
+    final isTemp = existing.id.startsWith(IdMappingStore.tempPrefix);
+    final isLglTemp = lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-gradings/${existing.id}/';
+
+    final payload = <String, dynamic>{
+      'lesson_grade_level':
+          isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
+      'task_name': taskName.trim(),
+      'task_description': taskDescription.trim(),
+      'grade_weight': gradeWeight.toStringAsFixed(2),
+      'max_score': maxScore,
+    };
+
+    try {
+      if (isTemp || isLglTemp) {
+        throw ApiException(message: 'Record is local draft', isOffline: true);
+      }
+      final response = await _apiClient.patch(endpoint, body: payload);
+      final updated = LessonGrading.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      ).copyWith(lessonPlanId: lessonPlanId, gradeLevelName: gradeLevelName);
+      await _cache.replaceChild(lessonPlanId, grading: updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      final optimistic = existing.copyWith(
+        lessonGradeLevelId: lessonGradeLevelId,
+        gradeLevelName: gradeLevelName,
+        taskName: taskName.trim(),
+        taskDescription: taskDescription.trim(),
+        gradeWeight: gradeWeight,
+        maxScore: maxScore,
+        isPendingSync: true,
+      );
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_grading_update',
+        method: 'PATCH',
+        endpoint: endpoint,
+        payload: payload,
+        dependsOnTempIds: [
+          if (isTemp) existing.id,
+          if (isLglTemp) lessonGradeLevelId,
+        ],
+      );
+      await _cache.replaceChild(lessonPlanId, grading: optimistic);
+      return optimistic;
+    }
+  }
+
+  Future<void> deleteLessonGrading({
+    required String lessonPlanId,
+    required String gradingId,
+  }) async {
+    final isTemp = gradingId.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = '/curriculum/lesson-gradings/$gradingId/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _cache.removeChild(lessonPlanId, gradingId: gradingId);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'lesson_grading_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [gradingId] : const [],
+      );
+      await _cache.removeChild(lessonPlanId, gradingId: gradingId);
+    }
+  }
+
+  // ---------------- LESSON MATERIAL CRUD ----------------
+
   Future<LessonMaterial> addMaterial({
     required String lessonPlanId,
     String? lessonGradeLevelId,
     String gradeLevelName = '',
     required String title,
-    String materialType = 'DOCUMENT',
+    String materialType = 'PDF',
     String resourceUrl = '',
     String notes = '',
   }) async {
     final deps = _collectDependencies(lessonPlanId, lessonGradeLevelId);
-    final isParentTemp = lessonPlanId.startsWith(IdMappingStore.tempPrefix);
     final isLglTemp = lessonGradeLevelId != null &&
         lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
 
-    final payload = <String, dynamic>{
-      'lesson_plan': isParentTemp ? lessonPlanId : int.parse(lessonPlanId),
-      if (lessonGradeLevelId != null)
-        'lesson_grade_level':
-            isLglTemp ? lessonGradeLevelId : int.parse(lessonGradeLevelId),
-      'title': title.trim(),
-      'material_type': materialType,
-      'resource_url': resourceUrl.trim(),
-      'notes': notes.trim(),
+    final materialPayload = <String, dynamic>{
+      'file_name': title.trim(),
+      'file_url': resourceUrl.trim().isNotEmpty
+          ? resourceUrl.trim()
+          : 'https://kalinga.local/materials/${Uri.encodeComponent(title.trim())}',
+      'file_type': materialType,
+      'file_size_kb': 0,
+      'description': notes.trim(),
+      'is_offline_cached': true,
     };
 
     try {
       if (deps.isNotEmpty) {
         throw ApiException(message: 'Parent record offline', isOffline: true);
       }
-      final response =
-          await _apiClient.post(ApiEndpoints.materials, body: payload);
-      final created = LessonMaterial.fromJson(response as Map<String, dynamic>)
-          .copyWith(gradeLevelName: gradeLevelName);
+      final matResponse =
+          await _apiClient.post(ApiEndpoints.materials, body: materialPayload);
+      final matJson = Map<String, dynamic>.from(matResponse as Map);
+      final createdMatId =
+          asNullableInt(matJson['material_id'] ?? matJson['id']);
+
+      if (lessonGradeLevelId != null && createdMatId != null) {
+        final linkPayload = <String, dynamic>{
+          'lesson_grade_level': int.parse(lessonGradeLevelId),
+          'material_id': createdMatId,
+          'usage_instructions': notes.trim(),
+        };
+        final linkResponse = await _apiClient.post(
+          _lessonGradeMaterialsEndpoint,
+          body: linkPayload,
+        );
+        final created = LessonMaterial.fromJson(
+          Map<String, dynamic>.from(linkResponse as Map),
+        ).copyWith(
+          lessonPlanId: lessonPlanId,
+          lessonGradeLevelId: lessonGradeLevelId,
+          gradeLevelName: gradeLevelName,
+          materialServerId: createdMatId,
+          title: title.trim(),
+          resourceUrl: resourceUrl.trim(),
+        );
+        await _cache.appendChild(lessonPlanId, material: created);
+        return created;
+      }
+
+      final created = LessonMaterial.fromJson(matJson).copyWith(
+        lessonPlanId: lessonPlanId,
+        gradeLevelName: gradeLevelName,
+      );
       await _cache.appendChild(lessonPlanId, material: created);
       return created;
     } on ApiException catch (e) {
@@ -714,18 +1097,127 @@ class CurriculumRepository {
         entityType: 'material',
         method: 'POST',
         endpoint: ApiEndpoints.materials,
-        payload: payload,
-        dependsOnTempIds: deps,
+        payload: materialPayload,
+        dependsOnTempIds: [
+          ...deps,
+          if (isLglTemp) lessonGradeLevelId,
+        ],
       );
       await _cache.appendChild(lessonPlanId, material: draft);
       return draft;
     }
   }
 
+  Future<LessonMaterial> updateMaterial({
+    required String lessonPlanId,
+    required LessonMaterial existing,
+    String? lessonGradeLevelId,
+    String gradeLevelName = '',
+    required String title,
+    String resourceUrl = '',
+    String notes = '',
+  }) async {
+    final isTemp = existing.id.startsWith(IdMappingStore.tempPrefix);
+    final isLglTemp = lessonGradeLevelId != null &&
+        lessonGradeLevelId.startsWith(IdMappingStore.tempPrefix);
+
+    final matId = existing.materialServerId ?? existing.serverId;
+    final matEndpoint = '/curriculum/materials/${matId ?? existing.id}/';
+    final matPayload = <String, dynamic>{
+      'file_name': title.trim(),
+      if (resourceUrl.trim().isNotEmpty) 'file_url': resourceUrl.trim(),
+      'description': notes.trim(),
+    };
+
+    try {
+      if (isTemp || isLglTemp) {
+        throw ApiException(message: 'Record is local draft', isOffline: true);
+      }
+      await _apiClient.patch(matEndpoint, body: matPayload);
+
+      if (existing.materialServerId != null && existing.serverId != null) {
+        await _apiClient.patch(
+          '$_lessonGradeMaterialsEndpoint${existing.serverId}/',
+          body: {
+            if (lessonGradeLevelId != null)
+              'lesson_grade_level': int.parse(lessonGradeLevelId),
+            'usage_instructions': notes.trim(),
+          },
+        );
+      }
+
+      final updated = existing.copyWith(
+        lessonGradeLevelId: lessonGradeLevelId,
+        gradeLevelName: gradeLevelName,
+        title: title.trim(),
+        resourceUrl: resourceUrl.trim(),
+        notes: notes.trim(),
+      );
+      await _cache.replaceChild(lessonPlanId, material: updated);
+      return updated;
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      final optimistic = existing.copyWith(
+        lessonGradeLevelId: lessonGradeLevelId,
+        gradeLevelName: gradeLevelName,
+        title: title.trim(),
+        resourceUrl: resourceUrl.trim(),
+        notes: notes.trim(),
+        isPendingSync: true,
+      );
+
+      await _syncQueue.enqueue(
+        entityType: 'material_update',
+        method: 'PATCH',
+        endpoint: matEndpoint,
+        payload: matPayload,
+        dependsOnTempIds: [
+          if (isTemp) existing.id,
+          if (isLglTemp) lessonGradeLevelId,
+        ],
+      );
+      await _cache.replaceChild(lessonPlanId, material: optimistic);
+      return optimistic;
+    }
+  }
+
+  Future<void> deleteMaterial({
+    required String lessonPlanId,
+    required LessonMaterial material,
+  }) async {
+    final isTemp = material.id.startsWith(IdMappingStore.tempPrefix);
+    final endpoint = material.materialServerId != null
+        ? '$_lessonGradeMaterialsEndpoint${material.id}/'
+        : '/curriculum/materials/${material.id}/';
+
+    try {
+      if (!isTemp) {
+        await _apiClient.delete(endpoint);
+      }
+      await _cache.removeChild(lessonPlanId, materialId: material.id);
+    } on ApiException catch (e) {
+      if (!e.isOffline) rethrow;
+
+      await _syncQueue.enqueue(
+        entityType: 'material_delete',
+        method: 'DELETE',
+        endpoint: endpoint,
+        payload: const {},
+        dependsOnTempIds: isTemp ? [material.id] : const [],
+      );
+      await _cache.removeChild(lessonPlanId, materialId: material.id);
+    }
+  }
+
+  // ---------------- FORK & APPROVAL ----------------
+
   Future<LessonPlan> forkLessonPlan(int serverId) async {
     final response =
         await _apiClient.post(ApiEndpoints.lessonPlanFork(serverId));
-    final forked = LessonPlan.fromJson(response as Map<String, dynamic>);
+    final forked = LessonPlan.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
     await _cache.saveDetail(forked);
     return forked;
   }
@@ -739,7 +1231,9 @@ class CurriculumRepository {
 
     try {
       final response = await _apiClient.patch(endpoint, body: payload);
-      final updated = LessonPlan.fromJson(response as Map<String, dynamic>);
+      final updated = LessonPlan.fromJson(
+        Map<String, dynamic>.from(response as Map),
+      );
       await _cache.saveDetail(updated);
       return updated;
     } on ApiException catch (e) {

@@ -18,14 +18,14 @@ from .models import (
 
 class LpAuthorInline(admin.TabularInline):
     model = LpAuthor
-    extra = 1
-    fields = ('account', 'author_role')
+    extra = 0
+    autocomplete_fields = ['account']
 
 
 class LpCheckerInline(admin.TabularInline):
     model = LpChecker
-    extra = 1
-    fields = ('account', 'checker_role')
+    extra = 0
+    autocomplete_fields = ['account']
 
 
 class LessonGradeLevelInline(admin.TabularInline):

@@ -6,16 +6,24 @@ import '../../data/curriculum_repository.dart';
 import '../../providers/curriculum_provider.dart';
 
 class MaterialsTab extends ConsumerWidget {
-  const MaterialsTab({super.key, required this.plan, required this.canEdit});
+  const MaterialsTab({
+    super.key,
+    required this.plan,
+    required this.canEdit,
+    this.canDelete = false,
+  });
 
   final LessonPlan plan;
   final bool canEdit;
+  final bool canDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: plan.materials.isEmpty
-          ? const Center(child: Text('No instructional materials or references listed yet.'))
+          ? const Center(
+              child: Text('No instructional materials or references listed yet.'),
+            )
           : ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: plan.materials.length,
@@ -38,8 +46,10 @@ class MaterialsTab extends ConsumerWidget {
                             ),
                           ),
                         Text(
-                          [m.materialType, if (m.resourceUrl.isNotEmpty) m.resourceUrl]
-                              .join(' • '),
+                          [
+                            m.materialType,
+                            if (m.resourceUrl.isNotEmpty) m.resourceUrl,
+                          ].join(' • '),
                         ),
                         if (m.notes.isNotEmpty)
                           Padding(
@@ -48,34 +58,108 @@ class MaterialsTab extends ConsumerWidget {
                           ),
                       ],
                     ),
-                    trailing: m.isPendingSync
-                        ? const Chip(label: Text('Queued'))
-                        : null,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (m.isPendingSync) const Chip(label: Text('Queued')),
+                        if (canEdit)
+                          IconButton(
+                            tooltip: 'Edit Material',
+                            icon: const Icon(Icons.edit_outlined, size: 20),
+                            onPressed: () =>
+                                _materialDialog(context, ref, existing: m),
+                          ),
+                        if (canDelete)
+                          IconButton(
+                            tooltip: 'Delete Material',
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            onPressed: () => _confirmDelete(context, ref, m),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
             ),
       floatingActionButton: canEdit
           ? FloatingActionButton(
-              onPressed: () => _addMaterialDialog(context, ref),
+              onPressed: () => _materialDialog(context, ref),
               child: const Icon(Icons.add),
             )
           : null,
     );
   }
 
-  Future<void> _addMaterialDialog(BuildContext context, WidgetRef ref) async {
-    LessonGradeLevel? selectedGrade =
-        plan.gradeLevels.isNotEmpty ? plan.gradeLevels.first : null;
-    final titleCtrl = TextEditingController();
-    final urlCtrl = TextEditingController();
-    final notesCtrl = TextEditingController();
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    LessonMaterial material,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Material?'),
+        content: Text('Remove "${material.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(curriculumRepositoryProvider).deleteMaterial(
+          lessonPlanId: plan.id,
+          material: material,
+        );
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(plan.id));
+  }
+
+  Future<void> _materialDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    LessonMaterial? existing,
+  }) async {
+    LessonGradeLevel? selectedGrade;
+    if (existing != null && existing.lessonGradeLevelId != null) {
+      for (final g in plan.gradeLevels) {
+        if (g.id == existing.lessonGradeLevelId) {
+          selectedGrade = g;
+          break;
+        }
+      }
+    } else if (existing == null && plan.gradeLevels.isNotEmpty) {
+      selectedGrade = plan.gradeLevels.first;
+    }
+
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final urlCtrl = TextEditingController(text: existing?.resourceUrl ?? '');
+    final notesCtrl = TextEditingController(text: existing?.notes ?? '');
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add Instructional Material / Reference'),
+          title: Text(
+            existing == null
+                ? 'Add Instructional Material / Reference'
+                : 'Edit Instructional Material / Reference',
+          ),
           content: SizedBox(
             width: 440,
             child: Column(
@@ -111,7 +195,7 @@ class MaterialsTab extends ConsumerWidget {
                 TextField(
                   controller: titleCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Material / Reference Title',
+                    labelText: 'Material File Name / Title',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -119,7 +203,7 @@ class MaterialsTab extends ConsumerWidget {
                 TextField(
                   controller: urlCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Resource URL / Reference Code (Optional)',
+                    labelText: 'File URL (Optional)',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -128,7 +212,7 @@ class MaterialsTab extends ConsumerWidget {
                   controller: notesCtrl,
                   maxLines: 2,
                   decoration: const InputDecoration(
-                    labelText: 'Preparation Notes',
+                    labelText: 'Usage Instructions / Description',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -143,14 +227,27 @@ class MaterialsTab extends ConsumerWidget {
             FilledButton(
               onPressed: () async {
                 if (titleCtrl.text.trim().isEmpty) return;
-                await ref.read(curriculumRepositoryProvider).addMaterial(
-                      lessonPlanId: plan.id,
-                      lessonGradeLevelId: selectedGrade?.id,
-                      gradeLevelName: selectedGrade?.gradeLevelName ?? '',
-                      title: titleCtrl.text,
-                      resourceUrl: urlCtrl.text,
-                      notes: notesCtrl.text,
-                    );
+                final repo = ref.read(curriculumRepositoryProvider);
+                if (existing == null) {
+                  await repo.addMaterial(
+                    lessonPlanId: plan.id,
+                    lessonGradeLevelId: selectedGrade?.id,
+                    gradeLevelName: selectedGrade?.gradeLevelName ?? '',
+                    title: titleCtrl.text,
+                    resourceUrl: urlCtrl.text,
+                    notes: notesCtrl.text,
+                  );
+                } else {
+                  await repo.updateMaterial(
+                    lessonPlanId: plan.id,
+                    existing: existing,
+                    lessonGradeLevelId: selectedGrade?.id,
+                    gradeLevelName: selectedGrade?.gradeLevelName ?? '',
+                    title: titleCtrl.text,
+                    resourceUrl: urlCtrl.text,
+                    notes: notesCtrl.text,
+                  );
+                }
                 ref.read(syncStatusProvider.notifier).refreshCounts();
                 ref.invalidate(lessonPlanDetailProvider(plan.id));
                 if (ctx.mounted) Navigator.pop(ctx);

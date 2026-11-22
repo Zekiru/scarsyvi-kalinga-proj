@@ -5,13 +5,17 @@ import '../../data/curriculum_models.dart';
 import '../../data/curriculum_repository.dart';
 import '../../providers/curriculum_provider.dart';
 
-/// Renders LessonFlow items (`lf_id`, `lesson_grade_level`, `time_minutes`, `stage`, `description`)
-/// as a multi-grade table on wide viewports and grouped/filtered cards on narrow screens.
 class LessonFlowsTab extends ConsumerStatefulWidget {
-  const LessonFlowsTab({super.key, required this.plan, required this.canEdit});
+  const LessonFlowsTab({
+    super.key,
+    required this.plan,
+    required this.canEdit,
+    this.canDelete = false,
+  });
 
   final LessonPlan plan;
   final bool canEdit;
+  final bool canDelete;
 
   @override
   ConsumerState<LessonFlowsTab> createState() => _LessonFlowsTabState();
@@ -77,9 +81,29 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
                         return _MultiGradeFlowTable(
                           plan: widget.plan,
                           steps: filteredSteps,
+                          canEdit: widget.canEdit,
+                          canDelete: widget.canDelete,
+                          onEdit: (step) => _flowDialog(
+                            context,
+                            ref,
+                            allSteps.length + 1,
+                            existing: step,
+                          ),
+                          onDelete: (step) => _confirmDelete(context, ref, step),
                         );
                       }
-                      return _FlowCardList(steps: filteredSteps);
+                      return _FlowCardList(
+                        steps: filteredSteps,
+                        canEdit: widget.canEdit,
+                        canDelete: widget.canDelete,
+                        onEdit: (step) => _flowDialog(
+                          context,
+                          ref,
+                          allSteps.length + 1,
+                          existing: step,
+                        ),
+                        onDelete: (step) => _confirmDelete(context, ref, step),
+                      );
                     },
                   ),
                 ),
@@ -88,18 +112,55 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
       floatingActionButton: widget.canEdit
           ? FloatingActionButton(
               onPressed: () =>
-                  _addFlowDialog(context, ref, allSteps.length + 1),
+                  _flowDialog(context, ref, allSteps.length + 1),
               child: const Icon(Icons.add),
             )
           : null,
     );
   }
 
-  Future<void> _addFlowDialog(
+  Future<void> _confirmDelete(
     BuildContext context,
     WidgetRef ref,
-    int nextOrder,
+    LessonFlow step,
   ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Flow Step?'),
+        content: Text('Delete "${step.stage}" (${step.timeMinutes} min)?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(curriculumRepositoryProvider).deleteLessonFlow(
+          lessonPlanId: widget.plan.id,
+          flowId: step.id,
+        );
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
+  }
+
+  Future<void> _flowDialog(
+    BuildContext context,
+    WidgetRef ref,
+    int nextOrder, {
+    LessonFlow? existing,
+  }) async {
     if (widget.plan.gradeLevels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -109,16 +170,27 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
       return;
     }
 
-    LessonGradeLevel selectedGrade = widget.plan.gradeLevels.first;
-    final stageCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final minsCtrl = TextEditingController(text: '10');
+    LessonGradeLevel selectedGrade = existing != null
+        ? widget.plan.gradeLevels.firstWhere(
+            (g) => g.id == existing.lessonGradeLevelId,
+            orElse: () => widget.plan.gradeLevels.first,
+          )
+        : widget.plan.gradeLevels.first;
+
+    final stageCtrl = TextEditingController(text: existing?.stage ?? '');
+    final descCtrl = TextEditingController(text: existing?.description ?? '');
+    final minsCtrl =
+        TextEditingController(text: '${existing?.timeMinutes ?? 10}');
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add Lesson Flow Step'),
+          title: Text(
+            existing == null
+                ? 'Add Lesson Flow Step'
+                : 'Edit Lesson Flow Step',
+          ),
           content: SizedBox(
             width: 440,
             child: Column(
@@ -183,15 +255,28 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
             FilledButton(
               onPressed: () async {
                 if (stageCtrl.text.trim().isEmpty) return;
-                await ref.read(curriculumRepositoryProvider).addLessonFlow(
-                      lessonPlanId: widget.plan.id,
-                      lessonGradeLevelId: selectedGrade.id,
-                      gradeLevelName: selectedGrade.gradeLevelName,
-                      stepOrder: nextOrder,
-                      stage: stageCtrl.text,
-                      description: descCtrl.text,
-                      timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
-                    );
+                final repo = ref.read(curriculumRepositoryProvider);
+                if (existing == null) {
+                  await repo.addLessonFlow(
+                    lessonPlanId: widget.plan.id,
+                    lessonGradeLevelId: selectedGrade.id,
+                    gradeLevelName: selectedGrade.gradeLevelName,
+                    stepOrder: nextOrder,
+                    stage: stageCtrl.text,
+                    description: descCtrl.text,
+                    timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
+                  );
+                } else {
+                  await repo.updateLessonFlow(
+                    lessonPlanId: widget.plan.id,
+                    existing: existing,
+                    lessonGradeLevelId: selectedGrade.id,
+                    gradeLevelName: selectedGrade.gradeLevelName,
+                    stage: stageCtrl.text,
+                    description: descCtrl.text,
+                    timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
+                  );
+                }
                 ref.read(syncStatusProvider.notifier).refreshCounts();
                 ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
                 if (ctx.mounted) Navigator.pop(ctx);
@@ -206,14 +291,26 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
 }
 
 class _MultiGradeFlowTable extends StatelessWidget {
-  const _MultiGradeFlowTable({required this.plan, required this.steps});
+  const _MultiGradeFlowTable({
+    required this.plan,
+    required this.steps,
+    required this.canEdit,
+    required this.canDelete,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final LessonPlan plan;
   final List<LessonFlow> steps;
+  final bool canEdit;
+  final bool canDelete;
+  final ValueChanged<LessonFlow> onEdit;
+  final ValueChanged<LessonFlow> onDelete;
 
   @override
   Widget build(BuildContext context) {
     final grades = plan.gradeLevels;
+    final hasActions = canEdit || canDelete;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -240,6 +337,7 @@ class _MultiGradeFlowTable extends StatelessWidget {
                   ),
                 ),
               ),
+              if (hasActions) const DataColumn(label: Text('Actions')),
             ],
             rows: steps.map((step) {
               return DataRow(
@@ -270,6 +368,30 @@ class _MultiGradeFlowTable extends StatelessWidget {
                       ),
                     );
                   }),
+                  if (hasActions)
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (canEdit)
+                            IconButton(
+                              tooltip: 'Edit Step',
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              onPressed: () => onEdit(step),
+                            ),
+                          if (canDelete)
+                            IconButton(
+                              tooltip: 'Delete Step',
+                              icon: Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              onPressed: () => onDelete(step),
+                            ),
+                        ],
+                      ),
+                    ),
                 ],
               );
             }).toList(),
@@ -281,9 +403,19 @@ class _MultiGradeFlowTable extends StatelessWidget {
 }
 
 class _FlowCardList extends StatelessWidget {
-  const _FlowCardList({required this.steps});
+  const _FlowCardList({
+    required this.steps,
+    required this.canEdit,
+    required this.canDelete,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final List<LessonFlow> steps;
+  final bool canEdit;
+  final bool canDelete;
+  final ValueChanged<LessonFlow> onEdit;
+  final ValueChanged<LessonFlow> onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -298,8 +430,10 @@ class _FlowCardList extends StatelessWidget {
             leading: CircleAvatar(
               child: Text('${step.timeMinutes}m'),
             ),
-            title: Text(step.stage,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            title: Text(
+              step.stage,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -315,7 +449,28 @@ class _FlowCardList extends StatelessWidget {
                 Text(step.description),
               ],
             ),
-            trailing: step.isPendingSync ? const Chip(label: Text('Queued')) : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (step.isPendingSync) const Chip(label: Text('Queued')),
+                if (canEdit)
+                  IconButton(
+                    tooltip: 'Edit Flow Step',
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                    onPressed: () => onEdit(step),
+                  ),
+                if (canDelete)
+                  IconButton(
+                    tooltip: 'Delete Flow Step',
+                    icon: Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    onPressed: () => onDelete(step),
+                  ),
+              ],
+            ),
           ),
         );
       },

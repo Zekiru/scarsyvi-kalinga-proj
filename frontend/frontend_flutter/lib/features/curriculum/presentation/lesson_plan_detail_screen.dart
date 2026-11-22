@@ -76,19 +76,62 @@ class LessonPlanDetailScreen extends ConsumerWidget {
         body: Center(child: Text('Error loading lesson plan: $err')),
       ),
       data: (plan) {
-        final isOwner = plan.isCreatedBy(currentUser?.id);
+        final userId = currentUser?.id;
+        final username = currentUser?.username;
+        final isOwner = plan.isCreatedBy(userId, currentUsername: username);
         final isAdmin = currentUser?.canAdminister ?? false;
         final canDelete = isOwner || isAdmin;
-        final canEdit = plan.isOwnedBy(currentUser?.id) ||
-            plan.isContributedBy(currentUser?.id) ||
+        final canEdit = plan.isOwnedBy(userId, currentUsername: username) ||
+            plan.isContributedBy(userId, currentUsername: username) ||
             isAdmin;
         final canReview = currentUser?.canModerate ?? false;
+        final primaryAuthorLabel = plan.primaryAuthorDisplay(
+          currentUserId: userId,
+          currentUsername: username,
+        );
 
         return DefaultTabController(
           length: 5,
           child: Scaffold(
             appBar: AppBar(
-              title: Text(plan.title),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    plan.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (primaryAuthorLabel.isNotEmpty)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person_outline,
+                          size: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Made by $primaryAuthorLabel',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
               actions: [
                 if (canEdit)
                   IconButton(
@@ -168,10 +211,26 @@ class LessonPlanDetailScreen extends ConsumerWidget {
             body: TabBarView(
               children: [
                 OverviewTab(plan: plan),
-                GradeLevelsTab(plan: plan, canEdit: canEdit),
-                LessonFlowsTab(plan: plan, canEdit: canEdit),
-                LessonGradingsTab(plan: plan, canEdit: canEdit),
-                MaterialsTab(plan: plan, canEdit: canEdit),
+                GradeLevelsTab(
+                  plan: plan,
+                  canEdit: canEdit,
+                  canDelete: canDelete,
+                ),
+                LessonFlowsTab(
+                  plan: plan,
+                  canEdit: canEdit,
+                  canDelete: canDelete,
+                ),
+                LessonGradingsTab(
+                  plan: plan,
+                  canEdit: canEdit,
+                  canDelete: canDelete,
+                ),
+                MaterialsTab(
+                  plan: plan,
+                  canEdit: canEdit,
+                  canDelete: canDelete,
+                ),
               ],
             ),
           ),

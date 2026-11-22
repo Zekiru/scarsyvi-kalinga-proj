@@ -51,6 +51,7 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
     final plansAsync = ref.watch(lessonPlansProvider);
     final currentUser = ref.watch(currentUserProvider);
     final userId = currentUser?.id;
+    final username = currentUser?.username;
 
     return Scaffold(
       body: Column(
@@ -111,9 +112,12 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                 final resourceCenterPlans = <LessonPlan>[];
 
                 for (final plan in plans) {
-                  if (plan.isCreatedBy(userId)) {
+                  if (plan.isCreatedBy(userId, currentUsername: username)) {
                     ownPlans.add(plan);
-                  } else if (plan.isContributedBy(userId)) {
+                  } else if (plan.isContributedBy(
+                    userId,
+                    currentUsername: username,
+                  )) {
                     contributedPlans.add(plan);
                   } else {
                     resourceCenterPlans.add(plan);
@@ -229,6 +233,8 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                                             const EdgeInsets.only(bottom: 10),
                                         child: LessonPlanCard(
                                           plan: plan,
+                                          currentUserId: userId,
+                                          currentUsername: username,
                                           onTap: () => _openPlan(plan),
                                         ),
                                       ),
@@ -250,8 +256,12 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                                             const EdgeInsets.only(bottom: 10),
                                         child: LessonPlanCard(
                                           plan: plan,
-                                          roleBadge:
-                                              plan.contributionRoleFor(userId),
+                                          currentUserId: userId,
+                                          currentUsername: username,
+                                          roleBadge: plan.contributionRoleFor(
+                                            userId,
+                                            currentUsername: username,
+                                          ),
                                           onTap: () => _openPlan(plan),
                                         ),
                                       ),
@@ -273,6 +283,8 @@ class _LessonPlansScreenState extends ConsumerState<LessonPlansScreen> {
                                             const EdgeInsets.only(bottom: 10),
                                         child: LessonPlanCard(
                                           plan: plan,
+                                          currentUserId: userId,
+                                          currentUsername: username,
                                           onTap: () => _openPlan(plan),
                                         ),
                                       ),
