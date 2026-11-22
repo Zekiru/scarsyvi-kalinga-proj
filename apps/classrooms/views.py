@@ -2,10 +2,11 @@ from django.db.models import F
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.models import Account
 from .models import StudentGrade
 from .permissions import IsClassroomAdviserOrAdmin
 from .selectors import (
@@ -174,3 +175,16 @@ class StudentGradeViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['student', 'grading_task', 'grading_task__lesson_grade_level__lp']
     ordering_fields = ['score', 'submitted_at']
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == Account.Role.ADMIN or user.is_superuser:
+            serializer.save()
+            return
+
+        student = serializer.validated_data['student']
+        if not student.classrooms.filter(adviser_id=user.id).exists():
+            raise PermissionDenied(
+                "Only the classroom's adviser or an admin can submit grades for this student."
+            )
+        serializer.save()
