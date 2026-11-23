@@ -34091,7 +34091,7 @@ r=A.bn(a,B.d2)
 r=r==null?null:r.b
 if(r==null)r=1
 return new A.uZ(s,r,A.Gq(a),A.dY(a),null,A.aV())},
-bd8(){var s="https://scarsyvi-kalinga-proj.onrender.com/api/v1/"
+bd8(){var s="https://scarsyvi-kalinga-proj.onrender.com/api/v1`"
 return B.d.kJ(s,"/")?B.d.ah(s,0,49):s},
 ala(){var s=0,r=A.t(t.H),q,p
 var $async$ala=A.o(function(a,b){if(a===1)return A.p(b,r)
@@ -90838,7 +90838,7 @@ return A.h(o.om(m.a,h),$async$rK)
 case 7:case 4:case 1:return A.q(q,r)}})
 return A.r($async$rK,r)},
 I(a){var s,r,q,p,o,n,m=this,l=null,k=m.gbc().b7($.QH(),t.FB),j=A.v(a).ok.e
-j=A.S("Kalinga",l,l,l,l,j==null?l:j.fP(B.b_),B.dq,l,l)
+j=A.S("MBEd",l,l,l,l,j==null?l:j.fP(B.b_),B.dq,l,l)
 s=m.ay?"Create a Teacher or Checker Account":"Sign in to access your lesson plans & classrooms"
 r=t.p
 s=A.b([j,B.eC,A.S(s,l,l,l,l,A.v(a).ok.z,B.dq,l,l),B.EM],r)
@@ -99644,7 +99644,7 @@ case 2:s=B.TV
 break
 default:s=p}r=A.ww(p,A.aXH(B.aE,0,p,p,B.ro),!0)
 q=A.ww(p,A.aXH(B.aI,0,p,p,B.ro),!0)
-return new A.Gw(s,A.a5(["/home",new A.amk()],t.N,t.Ab),"MileBeyond Education",r,q,n,!1,p)}}
+return new A.Gw(s,A.a5(["/home",new A.amk()],t.N,t.Ab),"MyBasic Education",r,q,n,!1,p)}}
 A.amk.prototype={
 $1(a){return B.MC},
 $S:656}
