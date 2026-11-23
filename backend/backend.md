@@ -1,6 +1,6 @@
-# Backend API (Django 6.1.1 / DRF 3.18.3)
+# MBEd Backend API (Django 6.1.1 / DRF 3.18.3)
 
-This **Backend** is a modular, API-first Django REST Framework service built to support multigrade lesson planning, classroom management, learner performance analytics, and teacher collaboration.
+The **MyBasic Education (MBEd)** Backend is a modular, API-first Django REST Framework service built to support multigrade lesson planning, classroom management, learner performance analytics, and teacher collaboration.
 
 ---
 
