@@ -34091,8 +34091,8 @@ r=A.bn(a,B.d2)
 r=r==null?null:r.b
 if(r==null)r=1
 return new A.uZ(s,r,A.Gq(a),A.dY(a),null,A.aV())},
-bd8(){var s="https://scarsyvi-kalinga-proj.onrender.com/api/v1`"
-return B.d.kJ(s,"/")?B.d.ah(s,0,49):s},
+bd8(){var s="https://scarsyvi-kalinga-proj.onrender.com/api/v1"
+return B.d.kJ(s,"/")?B.d.ah(s,0,48):s},
 ala(){var s=0,r=A.t(t.H),q,p
 var $async$ala=A.o(function(a,b){if(a===1)return A.p(b,r)
 for(;;)switch(s){case 0:if($.b3f){s=1
