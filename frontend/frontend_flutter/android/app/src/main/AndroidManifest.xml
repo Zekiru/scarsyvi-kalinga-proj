@@ -5,7 +5,7 @@
 
     <application
         android:label="MBEd"
-        android:name="${MileBeyond Education}"
+        android:name="${MyBasic Education}"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

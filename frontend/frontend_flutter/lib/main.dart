@@ -41,7 +41,7 @@ class KalingaApp extends ConsumerWidget {
     }
 
     return MaterialApp(
-      title: 'MileBeyond Education',
+      title: 'MyBasic Education',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
