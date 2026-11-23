@@ -16,20 +16,46 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from rest_framework.authtoken.views import obtain_auth_token
-from apps.curriculum.views import LessonPlanViewSet, MaterialViewSet
-from apps.classrooms.views import ClassroomViewSet
+from django.urls import path, include, URLResolver
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-router = DefaultRouter()
-router.register(r'lesson-plans', LessonPlanViewSet, basename='lessonplan')
-router.register(r'materials', MaterialViewSet, basename='material')
-router.register(r'classrooms', ClassroomViewSet, basename='classroom')
+
+class ApiV1RootView(APIView):
+    """
+    Dynamically displays clickable URLs for every route mounted in api_v1_patterns.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, format=None):
+        base_url = request.build_absolute_uri()
+        endpoints = {}
+
+        for pattern in api_v1_patterns:
+            route = str(pattern.pattern)
+            if not route:
+                continue  # Skip the root '' path itself
+
+            key = route.rstrip('/')
+            if isinstance(pattern, URLResolver):
+                endpoints[key] = f"{base_url}{route}"
+            else:
+                endpoints[key] = f"{base_url}{route}"
+
+        return Response(endpoints)
+
+
+api_v1_patterns = [
+    path('', ApiV1RootView.as_view(), name='api-root'),
+    path('accounts/', include('apps.accounts.urls')),
+    path('curriculum/', include('apps.curriculum.urls')),
+    path('classrooms/', include('apps.classrooms.urls')),
+    path('forums/', include('apps.forums.urls')),
+]
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v1/', include(router.urls)),
-    path('api/v1/auth/', include('rest_framework.urls')),
-    path('api/v1/api-token-auth/', obtain_auth_token, name='api_token_auth'),
+    path('api-auth/', include('rest_framework.urls')),
+    path('api/v1/', include((api_v1_patterns, 'v1'), namespace='v1')),
 ]

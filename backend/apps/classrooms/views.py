@@ -1,167 +1,190 @@
-from django.db.models import Count, Q, FloatField, ExpressionWrapper, F, Sum, Prefetch
-from django.db.models.functions import Coalesce, NullIf
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.filters import OrderingFilter
+from django.db.models import F
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
-from .models import Classroom, AttendanceSession, StudentGrade, Student
+from apps.accounts.models import Account
+from .models import StudentGrade
+from .permissions import IsClassroomAdviserOrAdmin
+from .selectors import (
+    get_classroom_queryset,
+    get_student_queryset,
+    get_attendance_session_queryset,
+)
 from .serializers import (
-    ClassroomSerializer,
+    ClassroomListSerializer,
+    ClassroomDetailSerializer,
+    ClassroomWriteSerializer,
+    StudentSerializer,
+    EnrollStudentsInputSerializer,
     AttendanceSessionSerializer,
-    StudentGradeBatchSerializer,
-    StudentGradeReadSerializer,
-    StudentSerializer
+    BatchAttendanceInputSerializer,
+    StudentGradeSerializer,
+    BatchGradeSubmitSerializer,
+)
+from .services import (
+    create_classroom,
+    enroll_students_in_classroom,
+    record_attendance_session,
+    submit_student_grades,
 )
 
 
 class ClassroomViewSet(viewsets.ModelViewSet):
-    serializer_class = ClassroomSerializer
+    permission_classes = [IsAuthenticated, IsClassroomAdviserOrAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['school_year', 'is_active', 'adviser', 'grade_levels']
+    search_fields = ['name', 'school_name', 'section']
+    ordering_fields = ['classroom_id', 'name', 'school_year', 'created_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
-        ordering = self.request.query_params.get('student_ordering', 'last_name')
+        return get_classroom_queryset().distinct()
 
-        # Build annotated Student QuerySet matching exact LessonGrading field names
-        students_qs = Student.objects.annotate(
-            # 1. Attendance Rate Calculation
-            total_sessions=Count('attendance_records__session', distinct=True),
-            present_sessions=Count(
-                'attendance_records',
-                filter=Q(attendance_records__status='PRESENT'),
-                distinct=True
-            )
-        ).annotate(
-            # Wrapped denominator in NullIf to prevent 0 division when no sessions exist
-            attendance_rate=Coalesce(
-                ExpressionWrapper(
-                    (F('present_sessions') * 100.0) / NullIf(F('total_sessions'), 0),
-                    output_field=FloatField()
-                ),
-                100.0  # Defaults to 100% attendance if no sessions logged yet
-            ),
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ClassroomListSerializer
+        if self.action in {'create', 'update', 'partial_update'}:
+            return ClassroomWriteSerializer
+        return ClassroomDetailSerializer
 
-            # 2. Recorded Weighted Grades Calculation (score / max_score * grade_weight)
-            # Wrapped max_score in NullIf to prevent 0 division if max_score is 0
-            total_earned_points=Sum(
-                ExpressionWrapper(
-                    (F('grades__score') * 100.0 / NullIf(F('grades__grading_task__max_score'), 0))
-                    * F('grades__grading_task__grade_weight'),
-                    output_field=FloatField()
-                )
-            ),
-            total_recorded_weights=Sum(
-                ExpressionWrapper(
-                    F('grades__grading_task__grade_weight'),
-                    output_field=FloatField()
-                )
-            )
-        ).annotate(
-            # Grade Average: Earned Weighted Points / Recorded Task Weights
-            # Wrapped total_recorded_weights in NullIf to prevent 0 division when no grades logged
-            grade_avg=Coalesce(
-                ExpressionWrapper(
-                    F('total_earned_points') / NullIf(F('total_recorded_weights'), 0),
-                    output_field=FloatField()
-                ),
-                100.0
-            )
-        ).order_by(ordering)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        classroom = create_classroom(creator=request.user, validated_data=serializer.validated_data)
+        output = ClassroomDetailSerializer(classroom, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
 
-        return Classroom.objects.prefetch_related(
-            Prefetch('students', queryset=students_qs)
-        )
-
-    @action(detail=True, methods=['get', 'post'], url_path='attendance')
-    def attendance(self, request, pk=None):
+    @action(detail=True, methods=['get'], url_path='students')
+    def students(self, request, pk=None):
+        """
+        Lists students enrolled in this classroom, annotated with `grade_average`
+        and `attendance_average`.
+        Supports sorting via `?ordering=`:
+          - `grade_average` / `-grade_average`
+          - `attendance_average` / `-attendance_average`
+          - `last_name` / `-last_name`
+          - `first_name` / `-first_name`
+          - `student_id` / `-student_id`
+        """
         classroom = self.get_object()
+        qs = get_student_queryset(classroom=classroom)
 
-        if request.method == 'GET':
-            sessions = AttendanceSession.objects.filter(classroom=classroom)
-            serializer = AttendanceSessionSerializer(sessions, many=True)
-            return Response(serializer.data)
+        grade_level = request.query_params.get('grade_level')
+        if grade_level:
+            qs = qs.filter(grade_level_id=grade_level)
 
-        serializer = AttendanceSessionSerializer(
-            data=request.data, 
-            context={'classroom': classroom}
-        )
-        if serializer.is_valid():
-            session = serializer.save()
-            return Response(
-                {"message": f"Attendance logged successfully (Session ID: {session.id})"}, 
-                status=status.HTTP_201_CREATED
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        search = request.query_params.get('search')
+        if search:
+            qs = qs.filter(first_name__icontains=search) | qs.filter(last_name__icontains=search)
 
-    @action(detail=True, methods=['get', 'post'], url_path='grades')
-    def grades(self, request, pk=None):
+        ordering_param = request.query_params.get('ordering', 'last_name')
+        allowed_orderings = {
+            'grade_average': F('grade_average').asc(nulls_last=True),
+            '-grade_average': F('grade_average').desc(nulls_last=True),
+            'attendance_average': F('attendance_average').asc(nulls_last=True),
+            '-attendance_average': F('attendance_average').desc(nulls_last=True),
+            'last_name': F('last_name').asc(),
+            '-last_name': F('last_name').desc(),
+            'first_name': F('first_name').asc(),
+            '-first_name': F('first_name').desc(),
+            'student_id': F('student_id').asc(),
+            '-student_id': F('student_id').desc(),
+        }
+
+        if ordering_param not in allowed_orderings:
+            raise ValidationError({
+                'ordering': f"Invalid ordering field '{ordering_param}'. Allowed: {', '.join(allowed_orderings.keys())}"
+            })
+
+        qs = qs.order_by(allowed_orderings[ordering_param], 'last_name', 'first_name')
+        serializer = StudentSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='enroll-students')
+    def enroll_students(self, request, pk=None):
         classroom = self.get_object()
+        serializer = EnrollStudentsInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        if request.method == 'GET':
-            grades = StudentGrade.objects.filter(student__classroom=classroom)
-            serializer = StudentGradeReadSerializer(grades, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        enroll_students_in_classroom(
+            classroom=classroom,
+            students=serializer.validated_data['student_ids'],
+        )
+        qs = get_student_queryset(classroom=classroom).order_by('last_name', 'first_name')
+        return Response(StudentSerializer(qs, many=True).data, status=status.HTTP_200_OK)
 
-        elif request.method == 'POST':
-            serializer = StudentGradeBatchSerializer(data=request.data)
-            if serializer.is_valid():
-                created_grades = serializer.save()
-                return Response(
-                    {"message": f"Successfully processed {len(created_grades)} grade entries."}, 
-                    status=status.HTTP_201_CREATED
-                )
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['post'], url_path='record-attendance')
+    def record_attendance(self, request, pk=None):
+        classroom = self.get_object()
+        serializer = BatchAttendanceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        session = record_attendance_session(
+            classroom=classroom,
+            session_date=serializer.validated_data['date'],
+            records_data=serializer.validated_data['records'],
+            remarks=serializer.validated_data.get('remarks'),
+        )
+        return Response(AttendanceSessionSerializer(session).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='submit-grades')
+    def submit_grades(self, request, pk=None):
+        classroom = self.get_object()
+        serializer = BatchGradeSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        saved_grades = submit_student_grades(
+            grades_data=serializer.validated_data['grades'],
+            classroom=classroom,
+        )
+        return Response(StudentGradeSerializer(saved_grades, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class StudentViewSet(viewsets.ModelViewSet):
-    """
-    Standalone ViewSet for flat querying/filtering of students across classrooms.
-    """
-    serializer_class = StudentSerializer
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ['classroom', 'gender']
-    ordering_fields = ['last_name', 'first_name', 'attendance_rate', 'grade_avg']
-    ordering = ['last_name']
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['grade_level', 'gender']
+    search_fields = ['first_name', 'last_name', 'lrn']
+    ordering_fields = ['student_id', 'last_name', 'first_name', 'grade_average', 'attendance_average']
+    ordering = ['last_name', 'first_name']
 
     def get_queryset(self):
-        queryset = Student.objects.all()
+        return get_student_queryset()
 
-        queryset = queryset.annotate(
-            total_sessions=Count('attendance_records__session', distinct=True),
-            present_sessions=Count(
-                'attendance_records',
-                filter=Q(attendance_records__status='PRESENT'),
-                distinct=True
-            )
-        ).annotate(
-            attendance_rate=Coalesce(
-                ExpressionWrapper(
-                    (F('present_sessions') * 100.0) / NullIf(F('total_sessions'), 0),
-                    output_field=FloatField()
-                ),
-                100.0
-            ),
-            total_earned_points=Sum(
-                ExpressionWrapper(
-                    (F('grades__score') * 100.0 / NullIf(F('grades__grading_task__max_score'), 0))
-                    * F('grades__grading_task__grade_weight'),
-                    output_field=FloatField()
-                )
-            ),
-            total_recorded_weights=Sum(
-                ExpressionWrapper(
-                    F('grades__grading_task__grade_weight'),
-                    output_field=FloatField()
-                )
-            )
-        ).annotate(
-            grade_avg=Coalesce(
-                ExpressionWrapper(
-                    F('total_earned_points') / NullIf(F('total_recorded_weights'), 0),
-                    output_field=FloatField()
-                ),
-                100.0
-            )
-        )
+    def get_serializer_class(self):
+        return StudentSerializer
 
-        return queryset
+
+class AttendanceSessionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = get_attendance_session_queryset()
+    serializer_class = AttendanceSessionSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['classroom', 'date']
+    ordering_fields = ['date', 'id']
+
+
+class StudentGradeViewSet(viewsets.ModelViewSet):
+    queryset = StudentGrade.objects.select_related('student', 'grading_task').order_by('-submitted_at')
+    serializer_class = StudentGradeSerializer
+    permission_classes = [IsAuthenticated, IsClassroomAdviserOrAdmin]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['student', 'grading_task', 'grading_task__lesson_grade_level__lp']
+    ordering_fields = ['score', 'submitted_at']
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == Account.Role.ADMIN or user.is_superuser:
+            serializer.save()
+            return
+
+        student = serializer.validated_data['student']
+        if not student.classrooms.filter(adviser_id=user.id).exists():
+            raise PermissionDenied(
+                "Only the classroom's adviser or an admin can submit grades for this student."
+            )
+        serializer.save()

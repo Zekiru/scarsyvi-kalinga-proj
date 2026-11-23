@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'apps.accounts',
     'apps.classrooms',
     'apps.curriculum',
+    'apps.forums',
 ]
 
 MIDDLEWARE = [
