@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_endpoints.dart';
+import '../network/connectivity_provider.dart';
 import '../storage/secure_token_storage.dart';
 import 'api_exception.dart';
 
@@ -12,16 +13,18 @@ typedef JsonHeaders = Map<String, String>;
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final tokenStorage = ref.watch(secureTokenStorageProvider);
-  return ApiClient(tokenStorage);
+  return ApiClient(tokenStorage, ref: ref);
 });
 
 class ApiClient {
   ApiClient(
     this._tokenStorage, {
+    required this.ref,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 15),
   }) : _client = httpClient ?? http.Client();
 
+  final Ref ref;
   final SecureTokenStorage _tokenStorage;
   final http.Client _client;
   final Duration timeout;
@@ -149,20 +152,42 @@ class ApiClient {
   Future<dynamic> _send(Future<http.Response> Function() requestFn) async {
     try {
       final response = await requestFn().timeout(timeout);
-      return _parseResponse(response);
+      final parsed = _parseResponse(response);
+      ref
+          .read(connectionStatusProvider.notifier)
+          .reportRequestResult(reachable: true);
+      return parsed;
     } on TimeoutException {
+      ref
+          .read(connectionStatusProvider.notifier)
+          .reportRequestResult(reachable: false);
       throw ApiException(
         message: 'Connection timed out. Changes will be saved offline.',
         isOffline: true,
       );
     } on http.ClientException catch (e) {
+      ref
+          .read(connectionStatusProvider.notifier)
+          .reportRequestResult(reachable: false);
       throw ApiException(
         message: 'Network unreachable: ${e.message}',
         isOffline: true,
       );
-    } on ApiException {
+    } on ApiException catch (e) {
+      if (e.isServerError || e.isOffline) {
+        ref
+            .read(connectionStatusProvider.notifier)
+            .reportRequestResult(reachable: false);
+      } else {
+        ref
+            .read(connectionStatusProvider.notifier)
+            .reportRequestResult(reachable: true);
+      }
       rethrow;
     } catch (e) {
+      ref
+          .read(connectionStatusProvider.notifier)
+          .reportRequestResult(reachable: false);
       throw ApiException(
         message: 'Unable to reach server: $e',
         isOffline: true,

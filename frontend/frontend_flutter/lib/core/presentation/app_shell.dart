@@ -1,14 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../sync/offline_prefetch_service.dart';
-
 import '../../features/accounts/presentation/account_screen.dart';
 import '../../features/classrooms/presentation/classrooms_screen.dart';
 import '../../features/curriculum/presentation/lesson_plans_screen.dart';
 import '../../features/forums/presentation/forums_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../network/connectivity_provider.dart';
+import '../sync/offline_prefetch_service.dart';
 import '../sync/sync_status_provider.dart';
 import 'sync_status_banner.dart';
 
@@ -17,8 +16,6 @@ class AppShell extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<AppShell> createState() => _AppShellState();
-
-  
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
@@ -69,8 +66,28 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
+    final connectionStatus = ref.watch(connectionStatusProvider);
     final isWide = MediaQuery.sizeOf(context).width >= 720;
+    final scheme = Theme.of(context).colorScheme;
+
+    final (IconData statusIcon, Color statusColor, String statusTooltip) =
+        switch (connectionStatus) {
+      ConnectionStatus.online => (
+          Icons.wifi_outlined,
+          scheme.primary,
+          'Online • Connected to server',
+        ),
+      ConnectionStatus.serverUnreachable => (
+          Icons.cloud_off_outlined,
+          scheme.error,
+          'Connection failed • Server unreachable',
+        ),
+      ConnectionStatus.offline => (
+          Icons.wifi_off_outlined,
+          scheme.error,
+          'Offline • No internet connection',
+        ),
+    };
 
     final pages = <Widget>[
       HomeScreen(onNavigateToTab: _selectTab),
@@ -86,12 +103,21 @@ class _AppShellState extends ConsumerState<AppShell> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Icon(
-              isOnline ? Icons.wifi_outlined : Icons.wifi_off_outlined,
-              size: 20,
-              color: isOnline
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.error,
+            child: Tooltip(
+              message: statusTooltip,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () =>
+                    ref.read(connectionStatusProvider.notifier).checkNow(),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(
+                    statusIcon,
+                    size: 20,
+                    color: statusColor,
+                  ),
+                ),
+              ),
             ),
           ),
         ],

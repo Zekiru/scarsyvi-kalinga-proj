@@ -24,7 +24,8 @@ class SyncStatusBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final syncState = ref.watch(syncStatusProvider);
-    final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
+    final connectionStatus = ref.watch(connectionStatusProvider);
+    final isOnline = connectionStatus == ConnectionStatus.online;
     final scheme = Theme.of(context).colorScheme;
 
     if (isOnline &&
@@ -39,13 +40,20 @@ class SyncStatusBanner extends ConsumerWidget {
     IconData icon;
     String message;
 
-    if (!isOnline) {
+    if (connectionStatus == ConnectionStatus.offline) {
       bgColor = scheme.surfaceContainerHighest;
       fgColor = scheme.onSurfaceVariant;
+      icon = Icons.wifi_off_outlined;
+      message = syncState.hasPending
+          ? 'No internet connection • ${syncState.pendingCount} change(s) queued'
+          : 'No internet connection • Working from local cache';
+    } else if (connectionStatus == ConnectionStatus.serverUnreachable) {
+      bgColor = scheme.errorContainer;
+      fgColor = scheme.onErrorContainer;
       icon = Icons.cloud_off_outlined;
       message = syncState.hasPending
-          ? 'Offline mode • ${syncState.pendingCount} change(s) queued'
-          : 'Offline mode • Working from local cache';
+          ? 'Connection failed • Server unreachable (${syncState.pendingCount} queued)'
+          : 'Connection failed • Server unreachable';
     } else if (syncState.isSyncing) {
       bgColor = scheme.primaryContainer;
       fgColor = scheme.onPrimaryContainer;
@@ -82,16 +90,27 @@ class SyncStatusBanner extends ConsumerWidget {
                 ),
               ),
             ),
-            if (isOnline && !syncState.isSyncing)
+            if (!syncState.isSyncing &&
+                (isOnline ||
+                    connectionStatus == ConnectionStatus.serverUnreachable))
               TextButton(
-                onPressed: () =>
-                    _triggerSyncAndRefresh(ref, syncState.hasFailures),
+                onPressed: () {
+                  if (connectionStatus == ConnectionStatus.serverUnreachable) {
+                    ref.read(syncStatusProvider.notifier).syncNow();
+                  } else {
+                    _triggerSyncAndRefresh(ref, syncState.hasFailures);
+                  }
+                },
                 style: TextButton.styleFrom(
                   foregroundColor: fgColor,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   minimumSize: const Size(0, 30),
                 ),
-                child: Text(syncState.hasFailures ? 'Retry' : 'Sync Now'),
+                child: Text(
+                  connectionStatus == ConnectionStatus.serverUnreachable
+                      ? 'Retry'
+                      : (syncState.hasFailures ? 'Retry' : 'Sync Now'),
+                ),
               ),
           ],
         ),

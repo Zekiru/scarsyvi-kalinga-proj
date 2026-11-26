@@ -35,10 +35,9 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
   SyncStatusState build() {
     final queueService = ref.watch(syncQueueServiceProvider);
 
-    // Automatically replay queued changes & refresh caches on reconnect
-    ref.listen<AsyncValue<bool>>(connectivityStreamProvider, (prev, next) {
-      final isOnline = next.value ?? false;
-      if (isOnline) {
+    // Automatically replay queued changes & refresh caches when server becomes reachable
+    ref.listen<ConnectionStatus>(connectionStatusProvider, (prev, next) {
+      if (prev != ConnectionStatus.online && next == ConnectionStatus.online) {
         syncNow();
       }
     });
@@ -83,6 +82,10 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
     state = _snapshot(service, isSyncing: true);
 
     try {
+      final reachable =
+          await ref.read(connectionStatusProvider.notifier).checkNow();
+      if (!reachable) return;
+
       if (service.pendingCount > 0) {
         await service.processQueue(
           onQueueChanged: () {
@@ -100,6 +103,10 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
     final service = ref.read(syncQueueServiceProvider);
     state = _snapshot(service, isSyncing: true);
     try {
+      final reachable =
+          await ref.read(connectionStatusProvider.notifier).checkNow();
+      if (!reachable) return;
+
       await service.retryFailed();
       await _refreshFeatureStores();
     } finally {

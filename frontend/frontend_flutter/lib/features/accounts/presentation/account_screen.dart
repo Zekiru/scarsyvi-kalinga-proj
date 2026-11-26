@@ -13,12 +13,36 @@ class AccountScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
     final syncState = ref.watch(syncStatusProvider);
-    final isOnline = ref.watch(connectivityStreamProvider).value ?? true;
+    final connectionStatus = ref.watch(connectionStatusProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final scheme = Theme.of(context).colorScheme;
 
     if (user == null) {
       return const Center(child: Text('Not signed in.'));
     }
+
+    final isOnline = connectionStatus == ConnectionStatus.online;
+    final canAttemptSync =
+        !syncState.isSyncing && connectionStatus != ConnectionStatus.offline;
+
+    final (IconData syncIcon, Color syncIconColor, String statusLabel) =
+        switch (connectionStatus) {
+      ConnectionStatus.online => (
+          Icons.cloud_done_outlined,
+          scheme.primary,
+          'Online',
+        ),
+      ConnectionStatus.serverUnreachable => (
+          Icons.cloud_off_outlined,
+          scheme.error,
+          'Connection Failed (Server Unreachable)',
+        ),
+      ConnectionStatus.offline => (
+          Icons.wifi_off_outlined,
+          scheme.error,
+          'Offline (No Internet)',
+        ),
+    };
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -173,22 +197,18 @@ class AccountScreen extends ConsumerWidget {
           child: Column(
             children: [
               ListTile(
-                leading: Icon(
-                  isOnline
-                      ? Icons.cloud_done_outlined
-                      : Icons.cloud_off_outlined,
-                ),
+                leading: Icon(syncIcon, color: syncIconColor),
                 title: const Text(
                   'Offline Sync Engine',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
-                  'Status: ${isOnline ? 'Online' : 'Offline'} • '
+                  'Status: $statusLabel • '
                   'Pending: ${syncState.pendingCount} • '
                   'Failed: ${syncState.failedCount}',
                 ),
                 trailing: FilledButton.tonalIcon(
-                  onPressed: (!isOnline || syncState.isSyncing)
+                  onPressed: !canAttemptSync
                       ? null
                       : () {
                           if (syncState.hasFailures) {
@@ -198,7 +218,9 @@ class AccountScreen extends ConsumerWidget {
                           }
                         },
                   icon: const Icon(Icons.sync, size: 18),
-                  label: Text(syncState.hasFailures ? 'Retry' : 'Sync'),
+                  label: Text(
+                    !isOnline || syncState.hasFailures ? 'Retry' : 'Sync',
+                  ),
                 ),
               ),
               if (syncState.failedOperations.isNotEmpty) ...[
