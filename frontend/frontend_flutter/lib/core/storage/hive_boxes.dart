@@ -4,6 +4,7 @@ import '../sync/sync_operation.dart';
 class HiveBoxes {
   HiveBoxes._();
 
+  static const String appSettings = 'app_settings';
   static const String accountsCache = 'cache_accounts';
   static const String curriculumCache = 'cache_curriculum';
   static const String classroomsCache = 'cache_classrooms';
@@ -30,6 +31,7 @@ class HiveBoxes {
 
   static Future<void> openAll() async {
     await Future.wait([
+      Hive.openBox<String>(appSettings),
       Hive.openBox<String>(accountsCache),
       Hive.openBox<String>(curriculumCache),
       Hive.openBox<String>(classroomsCache),
@@ -39,6 +41,7 @@ class HiveBoxes {
     ]);
   }
 
+  static Box<String> get settings => Hive.box<String>(appSettings);
   static Box<String> get accounts => Hive.box<String>(accountsCache);
   static Box<String> get curriculum => Hive.box<String>(curriculumCache);
   static Box<String> get classrooms => Hive.box<String>(classroomsCache);
@@ -46,6 +49,8 @@ class HiveBoxes {
   static Box<String> get mappings => Hive.box<String>(idMappings);
   static Box<SyncOperation> get queue => Hive.box<SyncOperation>(syncQueue);
 
+  /// Clears user-specific offline caches on sign-out while preserving device
+  /// preferences (such as Appearance/ThemeMode).
   static Future<void> clearUserData() async {
     await Future.wait([
       accounts.clear(),
