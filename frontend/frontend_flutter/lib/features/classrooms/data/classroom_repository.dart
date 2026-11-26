@@ -105,8 +105,9 @@ class ClassroomRepository {
         return cls;
       }).toList();
 
-      final unsyncedLocal =
-          getCachedClassrooms().where((c) => c.isLocalDraft).toList();
+      final unsyncedLocal = _syncQueue.hasActiveOperations
+          ? getCachedClassrooms().where((c) => c.isLocalDraft).toList()
+          : const <Classroom>[];
       final merged = [...unsyncedLocal, ...serverList];
 
       final serverIds = serverList.map((c) => c.id).toSet();
@@ -190,9 +191,10 @@ class ClassroomRepository {
       final serverStudents = parseModelList(raw, Student.fromJson);
 
       final existing = getCachedClassroomDetail(classroomId);
-      final pendingLocal =
-          existing?.students.where((s) => s.isPendingSync).toList() ??
-              const <Student>[];
+      final pendingLocal = _syncQueue.hasActiveOperations
+          ? (existing?.students.where((s) => s.isPendingSync).toList() ??
+              const <Student>[])
+          : const <Student>[];
 
       final merged = [...pendingLocal, ...serverStudents];
       await _cacheBox.put(
@@ -619,9 +621,12 @@ class ClassroomRepository {
       );
       final sessions = parseModelList(raw, AttendanceSession.fromJson);
 
-      final pendingLocal = getCachedAttendanceSessions(classroomId)
-          .where((s) => s.isPendingSync)
-          .toList();
+      final pendingLocal =
+          _syncQueue.isEntityQueued(entityType: 'record_attendance')
+              ? getCachedAttendanceSessions(classroomId)
+                  .where((s) => s.isPendingSync)
+                  .toList()
+              : const <AttendanceSession>[];
 
       final byDate = <String, AttendanceSession>{
         for (final s in sessions) s.date: s,
@@ -708,16 +713,19 @@ class ClassroomRepository {
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
 
+      final tempAttId = IdMappingStore.generateTempId('att');
       await _syncQueue.enqueue(
         entityType: 'record_attendance',
         method: 'POST',
         endpoint: ApiEndpoints.classroomRecordAttendance(classroomId),
         payload: payload,
+        tempClientId: tempAttId,
+        primaryKeyField: 'id',
         dependsOnTempIds: deps,
       );
 
       final draft = AttendanceSession(
-        id: IdMappingStore.generateTempId('att'),
+        id: tempAttId,
         classroomId: classroomId,
         date: date,
         remarks: remarks,
@@ -778,9 +786,18 @@ class ClassroomRepository {
             .toList();
       }
 
-      final pendingLocal =
-          getCachedGrades(classroomId).where((g) => g.isPendingSync).toList();
-      final merged = [...pendingLocal, ...grades];
+      final pendingLocal = _syncQueue.isEntityQueued(entityType: 'submit_grades')
+          ? getCachedGrades(classroomId).where((g) => g.isPendingSync).toList()
+          : const <StudentGrade>[];
+
+      final pendingKeys = {
+        for (final p in pendingLocal) '${p.studentId}_${p.gradingTaskId}',
+      };
+      final deduplicatedServer = grades
+          .where(
+              (g) => !pendingKeys.contains('${g.studentId}_${g.gradingTaskId}'))
+          .toList();
+      final merged = [...pendingLocal, ...deduplicatedServer];
 
       await _cacheBox.put(
         _gradesKey(classroomId),
@@ -871,11 +888,13 @@ class ClassroomRepository {
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
 
+      final batchTempId = IdMappingStore.generateTempId('grd');
       await _syncQueue.enqueue(
         entityType: 'submit_grades',
         method: 'POST',
         endpoint: ApiEndpoints.classroomSubmitGrades(classroomId),
         payload: payload,
+        tempClientId: batchTempId,
         dependsOnTempIds: deps,
       );
 

@@ -68,8 +68,9 @@ class ForumRepository {
       );
       final serverForums = _parseItems(_extractList(response), Forum.fromJson);
 
-      final unsyncedLocal =
-          getCachedForums().where((f) => f.isLocalDraft).toList();
+      final unsyncedLocal = _syncQueue.hasActiveOperations
+          ? getCachedForums().where((f) => f.isLocalDraft).toList()
+          : const <Forum>[];
       final merged = [...unsyncedLocal, ...serverForums];
 
       final serverForumIds = serverForums.map((f) => f.id).toSet();
@@ -116,14 +117,9 @@ class ForumRepository {
     }
   }
 
-  /// Queries `GET /api/v1/forums/threads/?author={userId}` and
-  /// `GET /api/v1/forums/posts/?author={userId}` to find every forum
-  /// the user has created a thread or posted a reply in, caching the result
-  /// in Hive for offline startup.
   Future<Set<String>> fetchParticipatedForumIds(int userId) async {
     final forumIds = <String>{...getCachedParticipatedForumIds(userId)};
 
-    // Also include any local offline drafts authored by this user
     for (final forum in getCachedForums()) {
       for (final thread in getCachedThreads(forum.id)) {
         if (thread.authorId == userId) {
@@ -139,7 +135,6 @@ class ForumRepository {
     }
 
     try {
-      // 1. Threads authored by user -> directly exposes `forum` ID
       final threadsResp = await _apiClient.get(
         ApiEndpoints.threads,
         queryParams: {'author': userId},
@@ -154,7 +149,6 @@ class ForumRepository {
         }
       }
 
-      // 2. Posts authored by user -> resolve `thread` -> `forum` ID
       final postsResp = await _apiClient.get(
         ApiEndpoints.posts,
         queryParams: {'author': userId},
@@ -201,8 +195,6 @@ class ForumRepository {
     }
   }
 
-  /// Idempotently initializes or fetches the `LessonPlanForum` for a `LessonPlan`
-  /// via `POST /api/v1/forums/forums/by-lesson-plan/` with `{"lesson_plan_id": id}`.
   Future<Forum> getOrCreateForumForLessonPlan({
     required String lessonPlanId,
     String lessonPlanTitle = '',
@@ -310,8 +302,9 @@ class ForumRepository {
       final serverThreads =
           _parseItems(_extractList(response), ForumThread.fromJson);
 
-      final localDrafts =
-          getCachedThreads(forumId).where((t) => t.isLocalDraft).toList();
+      final localDrafts = _syncQueue.hasActiveOperations
+          ? getCachedThreads(forumId).where((t) => t.isLocalDraft).toList()
+          : const <ForumThread>[];
       final merged = [...localDrafts, ...serverThreads];
 
       final serverThreadIds = serverThreads.map((t) => t.id).toSet();
@@ -369,9 +362,8 @@ class ForumRepository {
         thread = thread.copyWith(posts: posts);
       }
 
-      // Preserve any offline-queued replies for this thread
       final existing = getCachedThreadDetail(threadId);
-      if (existing != null) {
+      if (existing != null && _syncQueue.hasActiveOperations) {
         final pendingPosts =
             existing.posts.where((p) => p.isPendingSync).toList();
         if (pendingPosts.isNotEmpty) {
@@ -704,7 +696,6 @@ class ForumRepository {
   // MODERATION ACTIONS (`ADMIN`, `CHECKER`, & `LP AUTHOR`)
   // ==========================================
 
-  /// `POST /api/v1/forums/forums/{id}/toggle-lock/`
   Future<Forum> toggleForumLock(int forumServerId) async {
     final response =
         await _apiClient.post(ApiEndpoints.forumToggleLock(forumServerId));
@@ -713,7 +704,6 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/threads/{id}/moderate/`
   Future<ForumThread> moderateThread({
     required int threadServerId,
     bool? isPinned,
@@ -735,7 +725,6 @@ class ForumRepository {
     return updated;
   }
 
-  /// `POST /api/v1/forums/posts/{id}/toggle-hide/`
   Future<ForumPost> toggleHidePost({
     required String threadId,
     required int postServerId,

@@ -353,22 +353,26 @@ class _LessonPlanWizardDialogState
     if (_isEditing) return 'Edit Lesson Plan';
     return switch (_step) {
       0 => 'Step 1 of 5: Lesson Plan Details',
-      1 => 'Step 2 of 5: Grade Level & Standards (Optional)',
-      2 => 'Step 3 of 5: Initial Lesson Flow (Optional)',
-      3 => 'Step 4 of 5: Initial Grading Task (Optional)',
-      _ => 'Step 5 of 5: Instructional Material (Optional)',
+      1 => 'Step 2 of 5: Grade Level & Standards',
+      2 => 'Step 3 of 5: Initial Lesson Flow',
+      3 => 'Step 4 of 5: Initial Grading Task',
+      _ => 'Step 5 of 5: Instructional Material',
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 460;
+
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: Text(_dialogTitle),
       content: SizedBox(
-        width: 520,
+        width: screenWidth > 580 ? 520 : double.maxFinite,
         child: SingleChildScrollView(
           child: switch (_step) {
-            0 => _buildBasePlanStep(),
+            0 => _buildBasePlanStep(isMobile),
             1 => _buildGradeLevelStep(),
             2 => _buildFlowStep(),
             3 => _buildGradingStep(),
@@ -376,6 +380,7 @@ class _LessonPlanWizardDialogState
           },
         ),
       ),
+      actionsOverflowButtonSpacing: 8,
       actions: _buildActions(),
     );
   }
@@ -410,7 +415,7 @@ class _LessonPlanWizardDialogState
     return [
       TextButton(
         onPressed: _saving ? null : () => Navigator.pop(context, _activePlan),
-        child: const Text('Finish Now'),
+        child: const Text('Finish'),
       ),
       if (_step < 4)
         OutlinedButton(
@@ -443,7 +448,7 @@ class _LessonPlanWizardDialogState
     ];
   }
 
-  Widget _buildBasePlanStep() {
+  Widget _buildBasePlanStep(bool isMobile) {
     return Form(
       key: _baseFormKey,
       child: Column(
@@ -469,29 +474,46 @@ class _LessonPlanWizardDialogState
                 (v == null || v.trim().isEmpty) ? 'Required' : null,
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _langCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Primary Language',
-                    border: OutlineInputBorder(),
+          if (isMobile) ...[
+            TextFormField(
+              controller: _langCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Primary Language',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _demoCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Suggested Demographic',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ] else
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _langCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Primary Language',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _demoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Suggested Demographic',
-                    border: OutlineInputBorder(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _demoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Suggested Demographic',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _modelCtrl,
@@ -734,6 +756,7 @@ class _LessonPlanWizardDialogState
         const SizedBox(height: 12),
         TextField(
           controller: _matUrlCtrl,
+          keyboardType: TextInputType.url,
           decoration: const InputDecoration(
             labelText: 'File URL (Optional)',
             border: OutlineInputBorder(),

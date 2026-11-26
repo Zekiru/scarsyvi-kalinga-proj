@@ -60,10 +60,47 @@ class ClassroomDetailScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _confirmDeleteClassroom(
+    BuildContext context,
+    WidgetRef ref,
+    Classroom classroom,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Classroom?'),
+        content: Text(
+          'Delete "${classroom.name}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await ref
+          .read(classroomsProvider.notifier)
+          .deleteClassroom(classroom.id);
+      if (context.mounted) Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final classroomAsync = ref.watch(classroomDetailProvider(classroomId));
     final currentUser = ref.watch(currentUserProvider);
+    final isCompact = MediaQuery.sizeOf(context).width < 480;
 
     return classroomAsync.when(
       loading: () => Scaffold(
@@ -85,14 +122,22 @@ class ClassroomDetailScreen extends ConsumerWidget {
         final hasLinkedLessonPlan = classroom.lessonPlanId != null &&
             classroom.lessonPlanId!.isNotEmpty;
 
+        final hasOverflowActions = hasLinkedLessonPlan || canManage;
+
         return DefaultTabController(
           length: 3,
           child: Scaffold(
             appBar: AppBar(
+              titleSpacing: 4,
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(classroom.name),
+                  Text(
+                    classroom.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   if (classroom.section.isNotEmpty ||
                       classroom.schoolYear.isNotEmpty ||
                       classroom.lessonPlanTitle.isNotEmpty)
@@ -112,6 +157,8 @@ class ClassroomDetailScreen extends ConsumerWidget {
                           if (classroom.lessonPlanTitle.isNotEmpty)
                             'LP: ${classroom.lessonPlanTitle}',
                         ].join(' • '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: hasLinkedLessonPlan
                                   ? Theme.of(context).colorScheme.primary
@@ -125,68 +172,129 @@ class ClassroomDetailScreen extends ConsumerWidget {
                 ],
               ),
               actions: [
-                if (hasLinkedLessonPlan) ...[
-                  IconButton(
-                    tooltip: 'Open Linked Lesson Plan',
-                    icon: const Icon(Icons.menu_book_outlined),
-                    onPressed: () => _openLinkedLessonPlan(
-                      context,
-                      classroom.lessonPlanId!,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Discuss Lesson Plan in Forum',
-                    icon: const Icon(Icons.forum_outlined),
-                    onPressed: () =>
-                        _openLinkedLessonPlanForum(context, ref, classroom),
-                  ),
-                ],
-                if (canManage) ...[
-                  IconButton(
-                    tooltip: 'Edit Classroom',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () async {
-                      final updated = await showClassroomFormDialog(
+                if (!isCompact) ...[
+                  if (hasLinkedLessonPlan) ...[
+                    IconButton(
+                      tooltip: 'Open Linked Lesson Plan',
+                      icon: const Icon(Icons.menu_book_outlined),
+                      onPressed: () => _openLinkedLessonPlan(
                         context,
-                        ref,
-                        existing: classroom,
-                      );
-                      if (updated != null) {
-                        ref.invalidate(classroomDetailProvider(classroomId));
-                      }
-                    },
-                  ),
-                  IconButton(
-                    tooltip: 'Delete Classroom',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Classroom?'),
-                          content: Text(
-                            'Delete "${classroom.name}"? This cannot be undone.',
+                        classroom.lessonPlanId!,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Discuss Lesson Plan in Forum',
+                      icon: const Icon(Icons.forum_outlined),
+                      onPressed: () =>
+                          _openLinkedLessonPlanForum(context, ref, classroom),
+                    ),
+                  ],
+                  if (canManage) ...[
+                    IconButton(
+                      tooltip: 'Edit Classroom',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () async {
+                        final updated = await showClassroomFormDialog(
+                          context,
+                          ref,
+                          existing: classroom,
+                        );
+                        if (updated != null) {
+                          ref.invalidate(classroomDetailProvider(classroomId));
+                        }
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Delete Classroom',
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: () =>
+                          _confirmDeleteClassroom(context, ref, classroom),
+                    ),
+                  ],
+                ] else ...[
+                  if (canManage)
+                    IconButton(
+                      tooltip: 'Edit Classroom',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () async {
+                        final updated = await showClassroomFormDialog(
+                          context,
+                          ref,
+                          existing: classroom,
+                        );
+                        if (updated != null) {
+                          ref.invalidate(classroomDetailProvider(classroomId));
+                        }
+                      },
+                    ),
+                  if (hasOverflowActions)
+                    PopupMenuButton<String>(
+                      tooltip: 'More actions',
+                      onSelected: (value) async {
+                        switch (value) {
+                          case 'lp':
+                            _openLinkedLessonPlan(
+                              context,
+                              classroom.lessonPlanId!,
+                            );
+                          case 'forum':
+                            await _openLinkedLessonPlanForum(
+                              context,
+                              ref,
+                              classroom,
+                            );
+                          case 'delete':
+                            await _confirmDeleteClassroom(
+                              context,
+                              ref,
+                              classroom,
+                            );
+                        }
+                      },
+                      itemBuilder: (ctx) => [
+                        if (hasLinkedLessonPlan) ...[
+                          const PopupMenuItem(
+                            value: 'lp',
+                            child: ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.menu_book_outlined),
+                              title: Text('Open Linked Lesson Plan'),
+                            ),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Cancel'),
+                          const PopupMenuItem(
+                            value: 'forum',
+                            child: ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.forum_outlined),
+                              title: Text('Discuss in Forum'),
                             ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Delete'),
+                          ),
+                        ],
+                        if (canManage)
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                Icons.delete_outline,
+                                color: Theme.of(ctx).colorScheme.error,
+                              ),
+                              title: Text(
+                                'Delete Classroom',
+                                style: TextStyle(
+                                  color: Theme.of(ctx).colorScheme.error,
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                      );
-                      if (confirmed == true && context.mounted) {
-                        await ref
-                            .read(classroomsProvider.notifier)
-                            .deleteClassroom(classroom.id);
-                        if (context.mounted) Navigator.of(context).pop();
-                      }
-                    },
-                  ),
+                          ),
+                      ],
+                    ),
                 ],
               ],
               bottom: const TabBar(
@@ -267,19 +375,24 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add & Enroll New Student'),
-          content: SizedBox(
-            width: 420,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          final isMobile = screenWidth < 440;
+
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: const Text('Add & Enroll New Student'),
+            content: SizedBox(
+              width: screenWidth > 480 ? 420 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: TextFormField(
+                      if (isMobile) ...[
+                        TextFormField(
                           controller: firstCtrl,
                           decoration: const InputDecoration(
                             labelText: 'First Name',
@@ -288,10 +401,8 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                           validator: (v) =>
                               (v == null || v.trim().isEmpty) ? 'Required' : null,
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
+                        const SizedBox(height: 12),
+                        TextFormField(
                           controller: lastCtrl,
                           decoration: const InputDecoration(
                             labelText: 'Last Name',
@@ -300,14 +411,41 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                           validator: (v) =>
                               (v == null || v.trim().isEmpty) ? 'Required' : null,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
+                      ] else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: firstCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'First Name',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Required'
+                                        : null,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextFormField(
+                                controller: lastCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Last Name',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Required'
+                                        : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 12),
+                      if (isMobile) ...[
+                        DropdownButtonFormField<String>(
                           initialValue: gender,
                           decoration: const InputDecoration(
                             labelText: 'Gender',
@@ -321,70 +459,105 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                             if (val != null) setState(() => gender = val);
                           },
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
+                        const SizedBox(height: 12),
+                        TextFormField(
                           controller: lrnCtrl,
                           decoration: const InputDecoration(
                             labelText: 'LRN (12-digit Learner Ref)',
                             border: OutlineInputBorder(),
                           ),
                         ),
-                      ),
+                      ] else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: gender,
+                                decoration: const InputDecoration(
+                                  labelText: 'Gender',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'M',
+                                    child: Text('Male'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'F',
+                                    child: Text('Female'),
+                                  ),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) setState(() => gender = val);
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: TextFormField(
+                                controller: lrnCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'LRN (12-digit Learner Ref)',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (levels.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<GradeLevel>(
+                          initialValue: selectedLevel,
+                          decoration: const InputDecoration(
+                            labelText: 'Grade Level',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: levels
+                              .map(
+                                (g) => DropdownMenuItem(
+                                  value: g,
+                                  child: Text(g.name),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (val) =>
+                              setState(() => selectedLevel = val),
+                        ),
+                      ],
                     ],
                   ),
-                  if (levels.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<GradeLevel>(
-                      initialValue: selectedLevel,
-                      decoration: const InputDecoration(
-                        labelText: 'Grade Level',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: levels
-                          .map(
-                            (g) => DropdownMenuItem(
-                              value: g,
-                              child: Text(g.name),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) => setState(() => selectedLevel = val),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (!(formKey.currentState?.validate() ?? false)) return;
-                await ref
-                    .read(classroomRepositoryProvider)
-                    .createAndEnrollStudent(
-                      classroomId: widget.classroom.id,
-                      firstName: firstCtrl.text,
-                      lastName: lastCtrl.text,
-                      gender: gender,
-                      lrn: lrnCtrl.text,
-                      gradeLevelId: selectedLevel?.id,
-                      gradeLevelName: selectedLevel?.name ?? '',
-                    );
-                ref.read(syncStatusProvider.notifier).refreshCounts();
-                _refreshRoster();
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Save & Enroll'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (!(formKey.currentState?.validate() ?? false)) return;
+                  await ref
+                      .read(classroomRepositoryProvider)
+                      .createAndEnrollStudent(
+                        classroomId: widget.classroom.id,
+                        firstName: firstCtrl.text,
+                        lastName: lastCtrl.text,
+                        gender: gender,
+                        lrn: lrnCtrl.text,
+                        gradeLevelId: selectedLevel?.id,
+                        gradeLevelName: selectedLevel?.name ?? '',
+                      );
+                  ref.read(syncStatusProvider.notifier).refreshCounts();
+                  _refreshRoster();
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Save & Enroll'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -408,6 +581,7 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
+          final size = MediaQuery.sizeOf(ctx);
           final visible = filter.isEmpty
               ? candidates
               : candidates
@@ -419,14 +593,17 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                   .toList();
 
           return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             title: const Text('Enroll Existing Students'),
             content: SizedBox(
-              width: 440,
-              height: 360,
+              width: size.width > 500 ? 440 : double.maxFinite,
+              height: size.height * 0.45,
               child: candidates.isEmpty
                   ? const Center(
                       child: Text(
                         'All directory students are already enrolled in this class.',
+                        textAlign: TextAlign.center,
                       ),
                     )
                   : Column(
@@ -449,6 +626,7 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                               final stu = visible[idx];
                               final checked = selectedIds.contains(stu.id);
                               return CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
                                 value: checked,
                                 title: Text(stu.formalName),
                                 subtitle: Text(
@@ -510,6 +688,8 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
       ordering: _ordering,
     );
     final rosterAsync = ref.watch(classroomRosterProvider(query));
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return Scaffold(
       body: Column(
@@ -525,8 +705,8 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Sort by: '),
-                    const SizedBox(width: 8),
+                    const Text('Sort: '),
+                    const SizedBox(width: 4),
                     DropdownButton<String>(
                       value: _ordering,
                       items: const [
@@ -536,11 +716,11 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                         ),
                         DropdownMenuItem(
                           value: '-grade_average',
-                          child: Text('Highest Grade Average'),
+                          child: Text('Highest Grade Avg'),
                         ),
                         DropdownMenuItem(
                           value: 'grade_average',
-                          child: Text('Lowest Grade Average'),
+                          child: Text('Lowest Grade Avg'),
                         ),
                         DropdownMenuItem(
                           value: '-attendance_average',
@@ -574,8 +754,12 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
               data: (students) {
                 if (students.isEmpty) {
                   return const Center(
-                    child: Text(
-                      'No students enrolled yet. Add or enroll a student to begin.',
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No students enrolled yet. Add or enroll a student to begin.',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   );
                 }
@@ -593,42 +777,81 @@ class _RosterTabState extends ConsumerState<_RosterTab> {
                         if (stu.lrn.isNotEmpty) 'LRN: ${stu.lrn}',
                         if (stu.gender.isNotEmpty) stu.gender,
                       ];
+                      final hasChips = stu.gradeAverage != null ||
+                          stu.attendanceAverage != null ||
+                          stu.isPendingSync;
 
                       return Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              stu.firstName.isNotEmpty
-                                  ? stu.firstName[0].toUpperCase()
-                                  : '?',
-                            ),
-                          ),
-                          title: Text(stu.formalName),
-                          subtitle: details.isNotEmpty
-                              ? Text(details.join(' • '))
-                              : null,
-                          trailing: Wrap(
-                            spacing: 6,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (stu.gradeAverage != null)
-                                Chip(
-                                  label: Text(
-                                    'Grade: ${stu.gradeAverage!.toStringAsFixed(1)}%',
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    child: Text(
+                                      stu.firstName.isNotEmpty
+                                          ? stu.firstName[0].toUpperCase()
+                                          : '?',
+                                    ),
                                   ),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              if (stu.attendanceAverage != null)
-                                Chip(
-                                  label: Text(
-                                    'Att: ${stu.attendanceAverage!.toStringAsFixed(0)}%',
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          stu.formalName,
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (details.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            details.join(' • '),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                                   ),
-                                  visualDensity: VisualDensity.compact,
+                                ],
+                              ),
+                              if (hasChips) ...[
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    if (stu.gradeAverage != null)
+                                      Chip(
+                                        label: Text(
+                                          'Grade: ${stu.gradeAverage!.toStringAsFixed(1)}%',
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    if (stu.attendanceAverage != null)
+                                      Chip(
+                                        label: Text(
+                                          'Att: ${stu.attendanceAverage!.toStringAsFixed(0)}%',
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    if (stu.isPendingSync)
+                                      const Chip(
+                                        label: Text('Queued'),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                  ],
                                 ),
-                              if (stu.isPendingSync)
-                                const Chip(
-                                  label: Text('Queued'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -779,67 +1002,74 @@ class _AttendanceTabState extends ConsumerState<_AttendanceTab> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('Edit Attendance — ${student.formalName}'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Date: $_selectedDate',
-                  style: Theme.of(ctx).textTheme.bodySmall,
+        builder: (ctx, setDialogState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: Text('Edit Attendance — ${student.formalName}'),
+            content: SizedBox(
+              width: screenWidth > 480 ? 420 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Date: $_selectedDate',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<AttendanceStatus>(
+                      initialValue: status,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: AttendanceStatus.values
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setDialogState(() => status = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes / Excuse Reason (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<AttendanceStatus>(
-                  initialValue: status,
-                  decoration: const InputDecoration(
-                    labelText: 'Status',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: AttendanceStatus.values
-                      .map(
-                        (s) => DropdownMenuItem(
-                          value: s,
-                          child: Text(s.label),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) setDialogState(() => status = val);
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes / Excuse Reason (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                setState(() {
-                  _draftStatuses[student.id] = status;
-                  _draftNotes[student.id] = notesCtrl.text.trim();
-                });
-                Navigator.pop(ctx);
-                await _saveSession(existingSession);
-              },
-              child: const Text('Save Student Attendance'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  setState(() {
+                    _draftStatuses[student.id] = status;
+                    _draftNotes[student.id] = notesCtrl.text.trim();
+                  });
+                  Navigator.pop(ctx);
+                  await _saveSession(existingSession);
+                },
+                child: const Text('Save Attendance'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -851,13 +1081,19 @@ class _AttendanceTabState extends ConsumerState<_AttendanceTab> {
 
     if (students.isEmpty) {
       return const Center(
-        child:
-            Text('Enroll students in the Roster tab before taking attendance.'),
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Enroll students in the Roster tab before taking attendance.',
+            textAlign: TextAlign.center,
+          ),
+        ),
       );
     }
 
     final sessionsAsync =
         ref.watch(classroomAttendanceSessionsProvider(widget.classroom.id));
+    final isCompact = MediaQuery.sizeOf(context).width < 520;
 
     return sessionsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -875,24 +1111,35 @@ class _AttendanceTabState extends ConsumerState<_AttendanceTab> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _pickDate,
-                    icon: const Icon(Icons.calendar_today, size: 18),
-                    label: Text('Date: $_selectedDate'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        icon: const Icon(Icons.calendar_today, size: 18),
+                        label: Text(_selectedDate),
+                      ),
+                      if (existingSession?.isPendingSync ?? false) ...[
+                        const SizedBox(width: 8),
+                        const Chip(
+                          label: Text('Queued'),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ],
                   ),
-                  if (existingSession?.isPendingSync ?? false) ...[
-                    const SizedBox(width: 8),
-                    const Chip(label: Text('Queued')),
-                  ],
-                  const Spacer(),
                   if (widget.canManage)
                     FilledButton.icon(
                       onPressed: _isSaving
                           ? null
                           : () => _saveSession(existingSession),
-                      icon: const Icon(Icons.save_outlined),
+                      icon: const Icon(Icons.save_outlined, size: 18),
                       label: Text(_isSaving ? 'Saving...' : 'Save All'),
                     ),
                 ],
@@ -925,94 +1172,152 @@ class _AttendanceTabState extends ConsumerState<_AttendanceTab> {
                     final currentNotes =
                         _draftNotes[stu.id] ?? savedRec?.notes ?? '';
 
+                    final segmented = SegmentedButton<AttendanceStatus>(
+                      showSelectedIcon: !isCompact,
+                      segments: [
+                        ButtonSegment(
+                          value: AttendanceStatus.present,
+                          label: Text(isCompact ? 'Pres' : 'Present'),
+                        ),
+                        const ButtonSegment(
+                          value: AttendanceStatus.late,
+                          label: Text('Late'),
+                        ),
+                        ButtonSegment(
+                          value: AttendanceStatus.absent,
+                          label: Text(isCompact ? 'Abs' : 'Absent'),
+                        ),
+                        ButtonSegment(
+                          value: AttendanceStatus.excused,
+                          label: Text(isCompact ? 'Exc' : 'Excused'),
+                        ),
+                      ],
+                      selected: {currentStatus},
+                      onSelectionChanged: widget.canManage
+                          ? (sel) {
+                              setState(() {
+                                _draftStatuses[stu.id] = sel.first;
+                              });
+                            }
+                          : null,
+                    );
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Card(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
+                            horizontal: 14,
                             vertical: 10,
                           ),
-                          child: Wrap(
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    stu.formalName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+                          child: isCompact
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                stu.formalName,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              if (stu.gradeLevelName
+                                                      .isNotEmpty ||
+                                                  currentNotes.isNotEmpty)
+                                                Text(
+                                                  [
+                                                    if (stu.gradeLevelName
+                                                        .isNotEmpty)
+                                                      stu.gradeLevelName,
+                                                    if (currentNotes.isNotEmpty)
+                                                      'Note: $currentNotes',
+                                                  ].join(' • '),
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (widget.canManage)
+                                          IconButton(
+                                            tooltip:
+                                                'Edit individual status & note',
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            icon: const Icon(Icons.edit_note),
+                                            onPressed: () =>
+                                                _showIndividualAttendanceDialog(
+                                              student: stu,
+                                              currentStatus: currentStatus,
+                                              currentNotes: currentNotes,
+                                              existingSession: existingSession,
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                  ),
-                                  if (stu.gradeLevelName.isNotEmpty ||
-                                      currentNotes.isNotEmpty)
-                                    Text(
-                                      [
-                                        if (stu.gradeLevelName.isNotEmpty)
-                                          stu.gradeLevelName,
-                                        if (currentNotes.isNotEmpty)
-                                          'Note: $currentNotes',
-                                      ].join(' • '),
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                ],
-                              ),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SegmentedButton<AttendanceStatus>(
-                                    segments: const [
-                                      ButtonSegment(
-                                        value: AttendanceStatus.present,
-                                        label: Text('Present'),
-                                      ),
-                                      ButtonSegment(
-                                        value: AttendanceStatus.late,
-                                        label: Text('Late'),
-                                      ),
-                                      ButtonSegment(
-                                        value: AttendanceStatus.absent,
-                                        label: Text('Absent'),
-                                      ),
-                                      ButtonSegment(
-                                        value: AttendanceStatus.excused,
-                                        label: Text('Excused'),
-                                      ),
-                                    ],
-                                    selected: {currentStatus},
-                                    onSelectionChanged: widget.canManage
-                                        ? (sel) {
-                                            setState(() {
-                                              _draftStatuses[stu.id] =
-                                                  sel.first;
-                                            });
-                                          }
-                                        : null,
-                                  ),
-                                  if (widget.canManage) ...[
-                                    const SizedBox(width: 4),
-                                    IconButton(
-                                      tooltip: 'Edit individual status & note',
-                                      icon: const Icon(Icons.edit_note),
-                                      onPressed: () =>
-                                          _showIndividualAttendanceDialog(
-                                        student: stu,
-                                        currentStatus: currentStatus,
-                                        currentNotes: currentNotes,
-                                        existingSession: existingSession,
-                                      ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: segmented,
                                     ),
                                   ],
-                                ],
-                              ),
-                            ],
-                          ),
+                                )
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            stu.formalName,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (stu.gradeLevelName.isNotEmpty ||
+                                              currentNotes.isNotEmpty)
+                                            Text(
+                                              [
+                                                if (stu.gradeLevelName
+                                                    .isNotEmpty)
+                                                  stu.gradeLevelName,
+                                                if (currentNotes.isNotEmpty)
+                                                  'Note: $currentNotes',
+                                              ].join(' • '),
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    segmented,
+                                    if (widget.canManage) ...[
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        tooltip:
+                                            'Edit individual status & note',
+                                        icon: const Icon(Icons.edit_note),
+                                        onPressed: () =>
+                                            _showIndividualAttendanceDialog(
+                                          student: stu,
+                                          currentStatus: currentStatus,
+                                          currentNotes: currentNotes,
+                                          existingSession: existingSession,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                         ),
                       ),
                     );
@@ -1036,7 +1341,10 @@ class _AttendanceTabState extends ConsumerState<_AttendanceTab> {
                             '${s.remarks.isNotEmpty ? ' • ${s.remarks}' : ''}',
                           ),
                           trailing: s.isPendingSync
-                              ? const Chip(label: Text('Queued'))
+                              ? const Chip(
+                                  label: Text('Queued'),
+                                  visualDensity: VisualDensity.compact,
+                                )
                               : const Icon(Icons.edit_calendar_outlined),
                           onTap: () {
                             setState(() {
@@ -1098,103 +1406,113 @@ class _GradebookTab extends ConsumerWidget {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          'Edit Grade — ${grade.studentName.isNotEmpty ? grade.studentName : 'Student #${grade.studentId}'}',
-        ),
-        content: SizedBox(
-          width: 420,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  matchingTask != null &&
-                          matchingTask.gradeLevelName.isNotEmpty
-                      ? '${grade.gradingTaskName} (${matchingTask.gradeLevelName})'
-                      : grade.gradingTaskName,
-                  style: Theme.of(ctx).textTheme.titleSmall,
+      builder: (ctx) {
+        final screenWidth = MediaQuery.sizeOf(ctx).width;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: Text(
+            'Edit Grade — ${grade.studentName.isNotEmpty ? grade.studentName : 'Student #${grade.studentId}'}',
+          ),
+          content: SizedBox(
+            width: screenWidth > 480 ? 420 : double.maxFinite,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      matchingTask != null &&
+                              matchingTask.gradeLevelName.isNotEmpty
+                          ? '${grade.gradingTaskName} (${matchingTask.gradeLevelName})'
+                          : grade.gradingTaskName,
+                      style: Theme.of(ctx).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: scoreCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText:
+                            'Score (Max: ${maxScore.toStringAsFixed(0)})',
+                        border: const OutlineInputBorder(),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Required';
+                        }
+                        final parsed = double.tryParse(val.trim());
+                        if (parsed == null) return 'Enter a valid number';
+                        if (parsed < 0 || parsed > maxScore) {
+                          return 'Must be between 0 and ${maxScore.toStringAsFixed(0)}';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: feedbackCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Feedback (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: scoreCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Score (Max: ${maxScore.toStringAsFixed(0)})',
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) return 'Required';
-                    final parsed = double.tryParse(val.trim());
-                    if (parsed == null) return 'Enter a valid number';
-                    if (parsed < 0 || parsed > maxScore) {
-                      return 'Must be between 0 and ${maxScore.toStringAsFixed(0)}';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: feedbackCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Feedback (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              final parsed = double.parse(scoreCtrl.text.trim());
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                final parsed = double.parse(scoreCtrl.text.trim());
 
-              await ref.read(classroomRepositoryProvider).submitBatchGrades(
-                classroomId: classroom.id,
-                entries: [
-                  StudentGrade(
-                    id: grade.id,
-                    studentId: grade.studentId,
-                    studentName: grade.studentName,
-                    gradingTaskId: grade.gradingTaskId,
-                    gradingTaskName: grade.gradingTaskName,
-                    score: parsed,
-                    maxScore: maxScore,
-                    feedback: feedbackCtrl.text,
+                await ref.read(classroomRepositoryProvider).submitBatchGrades(
+                  classroomId: classroom.id,
+                  entries: [
+                    StudentGrade(
+                      id: grade.id,
+                      studentId: grade.studentId,
+                      studentName: grade.studentName,
+                      gradingTaskId: grade.gradingTaskId,
+                      gradingTaskName: grade.gradingTaskName,
+                      score: parsed,
+                      maxScore: maxScore,
+                      feedback: feedbackCtrl.text,
+                    ),
+                  ],
+                );
+
+                ref.read(syncStatusProvider.notifier).refreshCounts();
+                final query = GradesQuery(
+                  classroomId: classroom.id,
+                  lessonPlanId: classroom.lessonPlanId,
+                  enrolledStudentIds:
+                      classroom.students.map((s) => s.id).toSet(),
+                );
+                ref.invalidate(classroomGradesProvider(query));
+                ref.invalidate(
+                  classroomRosterProvider(
+                    RosterQuery(classroomId: classroom.id),
                   ),
-                ],
-              );
-
-              ref.read(syncStatusProvider.notifier).refreshCounts();
-              final query = GradesQuery(
-                classroomId: classroom.id,
-                lessonPlanId: classroom.lessonPlanId,
-                enrolledStudentIds:
-                    classroom.students.map((s) => s.id).toSet(),
-              );
-              ref.invalidate(classroomGradesProvider(query));
-              ref.invalidate(
-                classroomRosterProvider(
-                  RosterQuery(classroomId: classroom.id),
-                ),
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save Grade'),
-          ),
-        ],
-      ),
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Save Grade'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1269,11 +1587,15 @@ class _GradebookTab extends ConsumerWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
           final eligibleStudents = _eligibleStudentsForTask(selectedTask);
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          final isMobile = screenWidth < 500;
 
           return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             title: const Text('Submit Grade-Specific Scores'),
             content: SizedBox(
-              width: 540,
+              width: screenWidth > 600 ? 540 : double.maxFinite,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1283,7 +1605,7 @@ class _GradebookTab extends ConsumerWidget {
                       initialValue: selectedTask,
                       isExpanded: true,
                       decoration: const InputDecoration(
-                        labelText: 'Grading Task (Filtered by Grade Level)',
+                        labelText: 'Grading Task',
                         border: OutlineInputBorder(),
                       ),
                       items: gradingTasks.map((t) {
@@ -1318,8 +1640,62 @@ class _GradebookTab extends ConsumerWidget {
                         ),
                       )
                     else
-                      ...eligibleStudents.map(
-                        (stu) => Padding(
+                      ...eligibleStudents.map((stu) {
+                        if (isMobile) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  stu.formalName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (stu.gradeLevelName.isNotEmpty)
+                                  Text(
+                                    stu.gradeLevelName,
+                                    style: Theme.of(ctx).textTheme.labelSmall,
+                                  ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 112,
+                                      child: TextField(
+                                        controller: scoreCtrls[stu.id],
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              'Score / ${selectedTask.maxScore}',
+                                          isDense: true,
+                                          border: const OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: feedbackCtrls[stu.id],
+                                        decoration: const InputDecoration(
+                                          labelText: 'Feedback',
+                                          isDense: true,
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: Row(
                             children: [
@@ -1369,8 +1745,8 @@ class _GradebookTab extends ConsumerWidget {
                               ),
                             ],
                           ),
-                        ),
-                      ),
+                        );
+                      }),
                   ],
                 ),
               ),
@@ -1455,6 +1831,8 @@ class _GradebookTab extends ConsumerWidget {
     final tasks = planAsync?.value?.gradings ?? const <LessonGrading>[];
     final taskById = {for (final t in tasks) t.id: t};
     final studentById = {for (final s in classroom.students) s.id: s};
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return Scaffold(
       body: gradesAsync.when(
@@ -1510,31 +1888,8 @@ class _GradebookTab extends ConsumerWidget {
                   : (task?.taskName ?? 'Task #${g.gradingTaskId}');
 
               return Card(
-                child: ListTile(
-                  title: Text(
-                    '$stuLabel$gradeTag — $taskLabel',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    'Score: ${g.score.toStringAsFixed(2)} / ${g.maxScore.toStringAsFixed(0)}${g.feedback.isNotEmpty ? ' • ${g.feedback}' : ''}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (g.isPendingSync) const Chip(label: Text('Queued')),
-                      if (canManage)
-                        IconButton(
-                          tooltip: 'Edit individual grade',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _showSingleGradeEditDialog(
-                            context: context,
-                            ref: ref,
-                            grade: g,
-                            gradingTasks: tasks,
-                          ),
-                        ),
-                    ],
-                  ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
                   onTap: canManage
                       ? () => _showSingleGradeEditDialog(
                             context: context,
@@ -1543,6 +1898,53 @@ class _GradebookTab extends ConsumerWidget {
                             gradingTasks: tasks,
                           )
                       : null,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$stuLabel$gradeTag — $taskLabel',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (canManage)
+                              IconButton(
+                                tooltip: 'Edit individual grade',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                onPressed: () => _showSingleGradeEditDialog(
+                                  context: context,
+                                  ref: ref,
+                                  grade: g,
+                                  gradingTasks: tasks,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Score: ${g.score.toStringAsFixed(2)} / ${g.maxScore.toStringAsFixed(0)}${g.feedback.isNotEmpty ? ' • ${g.feedback}' : ''}',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                        if (g.isPendingSync) ...[
+                          const SizedBox(height: 8),
+                          const Chip(
+                            label: Text('Queued'),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               );
             },

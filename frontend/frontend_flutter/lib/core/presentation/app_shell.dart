@@ -189,7 +189,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 NavigationDestination(
                   icon: Icon(Icons.class_outlined),
                   selectedIcon: Icon(Icons.class_),
-                  label: 'Classrooms',
+                  label: 'Classes',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.forum_outlined),

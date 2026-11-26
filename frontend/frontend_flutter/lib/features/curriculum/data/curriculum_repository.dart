@@ -122,8 +122,9 @@ class CurriculumRepository {
       final serverPlans = parseModelList(raw, LessonPlan.fromJson)
           .map((plan) => _preserveResolvedAuthors(plan, cachedById[plan.id]))
           .toList();
-      final unsyncedLocal =
-          cachedPlans.where((p) => p.isLocalDraft).toList();
+      final unsyncedLocal = _syncQueue.hasActiveOperations
+          ? cachedPlans.where((p) => p.isLocalDraft).toList()
+          : const <LessonPlan>[];
       final merged = [...unsyncedLocal, ...serverPlans];
 
       final serverPlanIds = serverPlans.map((p) => p.id).toSet();
@@ -176,24 +177,28 @@ class CurriculumRepository {
       final existing = _cache.getLessonPlanDetail(id);
       plan = _preserveResolvedAuthors(plan, existing);
 
+      final hasQueue = _syncQueue.hasActiveOperations;
       final merged = existing == null
           ? plan
           : plan.copyWith(
               gradeLevels: [
                 ...plan.gradeLevels,
-                ...existing.gradeLevels.where((g) => g.isPendingSync),
+                if (hasQueue)
+                  ...existing.gradeLevels.where((g) => g.isPendingSync),
               ],
               flows: [
                 ...plan.flows,
-                ...existing.flows.where((f) => f.isPendingSync),
+                if (hasQueue) ...existing.flows.where((f) => f.isPendingSync),
               ],
               gradings: [
                 ...plan.gradings,
-                ...existing.gradings.where((g) => g.isPendingSync),
+                if (hasQueue)
+                  ...existing.gradings.where((g) => g.isPendingSync),
               ],
               materials: [
                 ...plan.materials,
-                ...existing.materials.where((m) => m.isPendingSync),
+                if (hasQueue)
+                  ...existing.materials.where((m) => m.isPendingSync),
               ],
             );
 
@@ -760,8 +765,9 @@ class CurriculumRepository {
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
 
+      final tempId = IdMappingStore.generateTempId('flow');
       final draft = LessonFlow(
-        id: IdMappingStore.generateTempId('flow'),
+        id: tempId,
         lessonPlanId: lessonPlanId,
         lessonGradeLevelId: lessonGradeLevelId,
         gradeLevelName: gradeLevelName,
@@ -777,6 +783,8 @@ class CurriculumRepository {
         method: 'POST',
         endpoint: ApiEndpoints.lessonFlows,
         payload: payload,
+        tempClientId: tempId,
+        primaryKeyField: 'id',
         dependsOnTempIds: deps,
       );
       await _cache.appendChild(lessonPlanId, flow: draft);
@@ -909,8 +917,9 @@ class CurriculumRepository {
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
 
+      final tempId = IdMappingStore.generateTempId('grad');
       final draft = LessonGrading(
-        id: IdMappingStore.generateTempId('grad'),
+        id: tempId,
         lessonPlanId: lessonPlanId,
         lessonGradeLevelId: lessonGradeLevelId,
         gradeLevelName: gradeLevelName,
@@ -926,6 +935,8 @@ class CurriculumRepository {
         method: 'POST',
         endpoint: ApiEndpoints.lessonGradings,
         payload: payload,
+        tempClientId: tempId,
+        primaryKeyField: 'id',
         dependsOnTempIds: deps,
       );
       await _cache.appendChild(lessonPlanId, grading: draft);
@@ -1089,8 +1100,9 @@ class CurriculumRepository {
     } on ApiException catch (e) {
       if (!e.isOffline) rethrow;
 
+      final tempId = IdMappingStore.generateTempId('mat');
       final draft = LessonMaterial(
-        id: IdMappingStore.generateTempId('mat'),
+        id: tempId,
         lessonPlanId: lessonPlanId,
         lessonGradeLevelId: lessonGradeLevelId,
         gradeLevelName: gradeLevelName,
@@ -1106,6 +1118,8 @@ class CurriculumRepository {
         method: 'POST',
         endpoint: ApiEndpoints.materials,
         payload: materialPayload,
+        tempClientId: tempId,
+        primaryKeyField: 'material_id',
         dependsOnTempIds: [
           ...deps,
           if (isLglTemp) lessonGradeLevelId,

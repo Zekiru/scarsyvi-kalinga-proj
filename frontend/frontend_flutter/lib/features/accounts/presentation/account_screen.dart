@@ -45,35 +45,41 @@ class AccountScreen extends ConsumerWidget {
     };
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CircleAvatar(
-                  radius: 28,
+                  radius: 26,
                   child: Text(
                     user.username.isNotEmpty
                         ? user.username[0].toUpperCase()
                         : '?',
-                    style: const TextStyle(fontSize: 22),
+                    style: const TextStyle(fontSize: 20),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         user.fullName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         '@${user.username}${user.email.isNotEmpty ? ' • ${user.email}' : ''}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       if (user.school.isNotEmpty)
@@ -81,13 +87,19 @@ class AccountScreen extends ConsumerWidget {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             user.school,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
+                      const SizedBox(height: 8),
+                      Chip(
+                        label: Text(user.role.apiValue),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ],
                   ),
                 ),
-                Chip(label: Text(user.role.apiValue)),
               ],
             ),
           ),
@@ -115,21 +127,28 @@ class AccountScreen extends ConsumerWidget {
                 SizedBox(
                   width: double.infinity,
                   child: SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    style: ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      ),
+                    ),
                     segments: const [
                       ButtonSegment(
                         value: ThemeMode.system,
-                        label: Text('System'),
-                        icon: Icon(Icons.brightness_auto_outlined),
+                        label: Text('System', maxLines: 1, softWrap: false),
+                        icon: Icon(Icons.brightness_auto_outlined, size: 18),
                       ),
                       ButtonSegment(
                         value: ThemeMode.light,
-                        label: Text('Light'),
-                        icon: Icon(Icons.light_mode_outlined),
+                        label: Text('Light', maxLines: 1, softWrap: false),
+                        icon: Icon(Icons.light_mode_outlined, size: 18),
                       ),
                       ButtonSegment(
                         value: ThemeMode.dark,
-                        label: Text('Dark'),
-                        icon: Icon(Icons.dark_mode_outlined),
+                        label: Text('Dark', maxLines: 1, softWrap: false),
+                        icon: Icon(Icons.dark_mode_outlined, size: 18),
                       ),
                     ],
                     selected: {themeMode},
@@ -196,31 +215,58 @@ class AccountScreen extends ConsumerWidget {
         Card(
           child: Column(
             children: [
-              ListTile(
-                leading: Icon(syncIcon, color: syncIconColor),
-                title: const Text(
-                  'Offline Sync Engine',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  'Status: $statusLabel • '
-                  'Pending: ${syncState.pendingCount} • '
-                  'Failed: ${syncState.failedCount}',
-                ),
-                trailing: FilledButton.tonalIcon(
-                  onPressed: !canAttemptSync
-                      ? null
-                      : () {
-                          if (syncState.hasFailures) {
-                            ref.read(syncStatusProvider.notifier).retryFailed();
-                          } else {
-                            ref.read(syncStatusProvider.notifier).syncNow();
-                          }
-                        },
-                  icon: const Icon(Icons.sync, size: 18),
-                  label: Text(
-                    !isOnline || syncState.hasFailures ? 'Retry' : 'Sync',
-                  ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(syncIcon, color: syncIconColor),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Offline Sync Engine',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed: !canAttemptSync
+                              ? null
+                              : () {
+                                  if (syncState.hasFailures) {
+                                    ref
+                                        .read(syncStatusProvider.notifier)
+                                        .retryFailed();
+                                  } else {
+                                    ref
+                                        .read(syncStatusProvider.notifier)
+                                        .syncNow();
+                                  }
+                                },
+                          icon: const Icon(Icons.sync, size: 18),
+                          label: Text(
+                            !isOnline || syncState.hasFailures
+                                ? 'Retry'
+                                : 'Sync',
+                          ),
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Status: $statusLabel • '
+                      'Pending: ${syncState.pendingCount} • '
+                      'Failed: ${syncState.failedCount}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
               if (syncState.failedOperations.isNotEmpty) ...[
@@ -229,10 +275,16 @@ class AccountScreen extends ConsumerWidget {
                   ListTile(
                     dense: true,
                     leading: const Icon(Icons.warning_amber_rounded),
-                    title: Text('${op.method} ${op.endpoint}'),
+                    title: Text(
+                      '${op.method} ${op.endpoint}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     subtitle: Text(
                       op.errorMessage ??
                           '${op.entityType} • Failed after ${op.retryCount} retries',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     trailing: IconButton(
                       tooltip: 'Discard failed item',

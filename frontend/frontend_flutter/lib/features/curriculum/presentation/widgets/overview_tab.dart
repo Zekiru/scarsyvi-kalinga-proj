@@ -76,8 +76,10 @@ class OverviewTab extends ConsumerWidget {
         _MetaItem('Fork Count', '${plan.forkCount} forks'),
     ];
 
+    final isNarrow = MediaQuery.sizeOf(context).width < 380;
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Card(
           child: Padding(
@@ -93,14 +95,52 @@ class OverviewTab extends ConsumerWidget {
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const Divider(height: 20),
-                ...metadataRows.map(
-                  (row) => Padding(
+                ...metadataRows.map((row) {
+                  final valueWidget = row.onTap != null
+                      ? InkWell(
+                          onTap: row.onTap,
+                          child: Text(
+                            row.value,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        )
+                      : Text(row.value);
+
+                  if (isNarrow) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            row.label,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          valueWidget,
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(
-                          width: 170,
+                          width: 132,
                           child: Text(
                             row.label,
                             style: Theme.of(context)
@@ -114,25 +154,12 @@ class OverviewTab extends ConsumerWidget {
                                 ),
                           ),
                         ),
-                        Expanded(
-                          child: row.onTap != null
-                              ? InkWell(
-                                  onTap: row.onTap,
-                                  child: Text(
-                                    row.value,
-                                    style: TextStyle(
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                )
-                              : Text(row.value),
-                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: valueWidget),
                       ],
                     ),
-                  ),
-                ),
+                  );
+                }),
               ],
             ),
           ),

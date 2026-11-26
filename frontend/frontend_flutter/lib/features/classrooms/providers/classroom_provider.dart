@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/sync/id_mapping_store.dart';
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
 import '../data/classroom_models.dart';
@@ -117,7 +118,9 @@ class ClassroomsNotifier extends AsyncNotifier<List<Classroom>> {
 
 final classroomDetailProvider =
     FutureProvider.family<Classroom, String>((ref, id) async {
-  return ref.watch(classroomRepositoryProvider).fetchClassroomDetail(id);
+  ref.watch(syncCompletedTickProvider);
+  final resolvedId = ref.read(idMappingStoreProvider).resolveId(id);
+  return ref.watch(classroomRepositoryProvider).fetchClassroomDetail(resolvedId);
 });
 
 class RosterQuery {
@@ -144,8 +147,11 @@ class RosterQuery {
 
 final classroomRosterProvider =
     FutureProvider.family<List<Student>, RosterQuery>((ref, query) async {
+  ref.watch(syncCompletedTickProvider);
+  final resolvedId =
+      ref.read(idMappingStoreProvider).resolveId(query.classroomId);
   return ref.watch(classroomRepositoryProvider).fetchClassroomStudents(
-        query.classroomId,
+        resolvedId,
         ordering: query.ordering,
         search: query.search,
       );
@@ -154,9 +160,11 @@ final classroomRosterProvider =
 final classroomAttendanceSessionsProvider =
     FutureProvider.family<List<AttendanceSession>, String>(
   (ref, classroomId) async {
+    ref.watch(syncCompletedTickProvider);
+    final resolvedId = ref.read(idMappingStoreProvider).resolveId(classroomId);
     return ref
         .watch(classroomRepositoryProvider)
-        .fetchAttendanceSessions(classroomId);
+        .fetchAttendanceSessions(resolvedId);
   },
 );
 
@@ -189,9 +197,18 @@ class GradesQuery {
 
 final classroomGradesProvider =
     FutureProvider.family<List<StudentGrade>, GradesQuery>((ref, query) async {
+  ref.watch(syncCompletedTickProvider);
+  final mappings = ref.read(idMappingStoreProvider);
+  final resolvedClassroomId = mappings.resolveId(query.classroomId);
+  final resolvedPlanId = query.lessonPlanId != null
+      ? mappings.resolveId(query.lessonPlanId!)
+      : null;
+  final resolvedStudentIds =
+      query.enrolledStudentIds.map(mappings.resolveId).toSet();
+
   return ref.watch(classroomRepositoryProvider).fetchGrades(
-        query.classroomId,
-        lessonPlanId: query.lessonPlanId,
-        enrolledStudentIds: query.enrolledStudentIds,
+        resolvedClassroomId,
+        lessonPlanId: resolvedPlanId,
+        enrolledStudentIds: resolvedStudentIds,
       );
 });

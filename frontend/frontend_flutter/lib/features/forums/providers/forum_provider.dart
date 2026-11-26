@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/sync/id_mapping_store.dart';
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
 import '../../curriculum/providers/curriculum_provider.dart';
@@ -81,6 +82,7 @@ class ForumsNotifier extends AsyncNotifier<List<Forum>> {
 /// Resolves all forum IDs the current user has participated in (created a
 /// thread or posted a reply), backed by Hive cache + server queries.
 final participatedForumIdsProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(syncCompletedTickProvider);
   final user = ref.watch(currentUserProvider);
   if (user == null) return const {};
   return ref.watch(forumRepositoryProvider).fetchParticipatedForumIds(user.id);
@@ -113,12 +115,16 @@ final forumModeratorProvider =
 
 final forumThreadsProvider =
     FutureProvider.family<List<ForumThread>, String>((ref, forumId) async {
-  return ref.watch(forumRepositoryProvider).fetchThreads(forumId);
+  ref.watch(syncCompletedTickProvider);
+  final resolvedId = ref.read(idMappingStoreProvider).resolveId(forumId);
+  return ref.watch(forumRepositoryProvider).fetchThreads(resolvedId);
 });
 
 final threadDetailProvider =
     FutureProvider.family<ForumThread, String>((ref, threadId) async {
-  return ref.watch(forumRepositoryProvider).fetchThreadDetail(threadId);
+  ref.watch(syncCompletedTickProvider);
+  final resolvedId = ref.read(idMappingStoreProvider).resolveId(threadId);
+  return ref.watch(forumRepositoryProvider).fetchThreadDetail(resolvedId);
 });
 
 final forumReplyHelperProvider = Provider((ref) {
@@ -129,8 +135,10 @@ final forumReplyHelperProvider = Provider((ref) {
     String parentAuthorUsername = '',
   }) async {
     final user = ref.read(currentUserProvider);
+    final resolvedThreadId =
+        ref.read(idMappingStoreProvider).resolveId(threadId);
     final post = await ref.read(forumRepositoryProvider).createPost(
-          threadId: threadId,
+          threadId: resolvedThreadId,
           content: content,
           parentPostId: parentPostId,
           parentAuthorUsername: parentAuthorUsername,
@@ -140,6 +148,7 @@ final forumReplyHelperProvider = Provider((ref) {
         );
     ref.read(syncStatusProvider.notifier).refreshCounts();
     ref.invalidate(threadDetailProvider(threadId));
+    ref.invalidate(threadDetailProvider(resolvedThreadId));
     ref.invalidate(participatedForumIdsProvider);
     return post;
   };

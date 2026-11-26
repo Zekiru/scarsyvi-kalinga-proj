@@ -19,66 +19,111 @@ class MaterialsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Scaffold(
       body: plan.materials.isEmpty
           ? const Center(
               child: Text('No instructional materials or references listed yet.'),
             )
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: plan.materials.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
                 final m = plan.materials[i];
                 return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.attachment),
-                    title: Text(m.title),
-                    subtitle: Column(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (m.gradeLevelName.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Chip(
-                              label: Text(m.gradeLevelName),
-                              visualDensity: VisualDensity.compact,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(
+                                Icons.attachment,
+                                size: 20,
+                                color: colors.primary,
+                              ),
                             ),
-                          ),
-                        Text(
-                          [
-                            m.materialType,
-                            if (m.resourceUrl.isNotEmpty) m.resourceUrl,
-                          ].join(' • '),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                m.title,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (canEdit)
+                              IconButton(
+                                tooltip: 'Edit Material',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                onPressed: () =>
+                                    _materialDialog(context, ref, existing: m),
+                              ),
+                            if (canDelete)
+                              IconButton(
+                                tooltip: 'Delete Material',
+                                visualDensity: VisualDensity.compact,
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                  color: colors.error,
+                                ),
+                                onPressed: () => _confirmDelete(context, ref, m),
+                              ),
+                          ],
                         ),
-                        if (m.notes.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(m.notes),
+                        if (m.gradeLevelName.isNotEmpty ||
+                            m.materialType.isNotEmpty ||
+                            m.isPendingSync) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if (m.gradeLevelName.isNotEmpty)
+                                Chip(
+                                  label: Text(m.gradeLevelName),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              if (m.materialType.isNotEmpty)
+                                Chip(
+                                  label: Text(m.materialType),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              if (m.isPendingSync)
+                                const Chip(
+                                  label: Text('Queued'),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (m.isPendingSync) const Chip(label: Text('Queued')),
-                        if (canEdit)
-                          IconButton(
-                            tooltip: 'Edit Material',
-                            icon: const Icon(Icons.edit_outlined, size: 20),
-                            onPressed: () =>
-                                _materialDialog(context, ref, existing: m),
-                          ),
-                        if (canDelete)
-                          IconButton(
-                            tooltip: 'Delete Material',
-                            icon: Icon(
-                              Icons.delete_outline,
-                              size: 20,
-                              color: Theme.of(context).colorScheme.error,
+                        ],
+                        if (m.resourceUrl.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            m.resourceUrl,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.primary,
                             ),
-                            onPressed: () => _confirmDelete(context, ref, m),
                           ),
+                        ],
+                        if (m.notes.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            m.notes,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -154,108 +199,116 @@ class MaterialsTab extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text(
-            existing == null
-                ? 'Add Instructional Material / Reference'
-                : 'Edit Instructional Material / Reference',
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (plan.gradeLevels.isNotEmpty) ...[
-                  DropdownButtonFormField<LessonGradeLevel?>(
-                    initialValue: selectedGrade,
-                    decoration: const InputDecoration(
-                      labelText: 'Grade Level (Optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<LessonGradeLevel?>(
-                        value: null,
-                        child: Text('All Grade Levels'),
-                      ),
-                      ...plan.gradeLevels.map(
-                        (g) => DropdownMenuItem<LessonGradeLevel?>(
-                          value: g,
-                          child: Text(
-                            g.gradeLevelName.isNotEmpty
-                                ? g.gradeLevelName
-                                : 'Grade ${g.gradeLevelId}',
-                          ),
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: Text(
+              existing == null
+                  ? 'Add Instructional Material'
+                  : 'Edit Instructional Material',
+            ),
+            content: SizedBox(
+              width: screenWidth > 500 ? 440 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (plan.gradeLevels.isNotEmpty) ...[
+                      DropdownButtonFormField<LessonGradeLevel?>(
+                        initialValue: selectedGrade,
+                        decoration: const InputDecoration(
+                          labelText: 'Grade Level (Optional)',
+                          border: OutlineInputBorder(),
                         ),
+                        items: [
+                          const DropdownMenuItem<LessonGradeLevel?>(
+                            value: null,
+                            child: Text('All Grade Levels'),
+                          ),
+                          ...plan.gradeLevels.map(
+                            (g) => DropdownMenuItem<LessonGradeLevel?>(
+                              value: g,
+                              child: Text(
+                                g.gradeLevelName.isNotEmpty
+                                    ? g.gradeLevelName
+                                    : 'Grade ${g.gradeLevelId}',
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) => setState(() => selectedGrade = val),
                       ),
+                      const SizedBox(height: 12),
                     ],
-                    onChanged: (val) => setState(() => selectedGrade = val),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Material File Name / Title',
-                    border: OutlineInputBorder(),
-                  ),
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Material File Name / Title',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: urlCtrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'File URL (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Usage Instructions / Description',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: urlCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'File URL (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notesCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Usage Instructions / Description',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (titleCtrl.text.trim().isEmpty) return;
-                final repo = ref.read(curriculumRepositoryProvider);
-                if (existing == null) {
-                  await repo.addMaterial(
-                    lessonPlanId: plan.id,
-                    lessonGradeLevelId: selectedGrade?.id,
-                    gradeLevelName: selectedGrade?.gradeLevelName ?? '',
-                    title: titleCtrl.text,
-                    resourceUrl: urlCtrl.text,
-                    notes: notesCtrl.text,
-                  );
-                } else {
-                  await repo.updateMaterial(
-                    lessonPlanId: plan.id,
-                    existing: existing,
-                    lessonGradeLevelId: selectedGrade?.id,
-                    gradeLevelName: selectedGrade?.gradeLevelName ?? '',
-                    title: titleCtrl.text,
-                    resourceUrl: urlCtrl.text,
-                    notes: notesCtrl.text,
-                  );
-                }
-                ref.read(syncStatusProvider.notifier).refreshCounts();
-                ref.invalidate(lessonPlanDetailProvider(plan.id));
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (titleCtrl.text.trim().isEmpty) return;
+                  final repo = ref.read(curriculumRepositoryProvider);
+                  if (existing == null) {
+                    await repo.addMaterial(
+                      lessonPlanId: plan.id,
+                      lessonGradeLevelId: selectedGrade?.id,
+                      gradeLevelName: selectedGrade?.gradeLevelName ?? '',
+                      title: titleCtrl.text,
+                      resourceUrl: urlCtrl.text,
+                      notes: notesCtrl.text,
+                    );
+                  } else {
+                    await repo.updateMaterial(
+                      lessonPlanId: plan.id,
+                      existing: existing,
+                      lessonGradeLevelId: selectedGrade?.id,
+                      gradeLevelName: selectedGrade?.gradeLevelName ?? '',
+                      title: titleCtrl.text,
+                      resourceUrl: urlCtrl.text,
+                      notes: notesCtrl.text,
+                    );
+                  }
+                  ref.read(syncStatusProvider.notifier).refreshCounts();
+                  ref.invalidate(lessonPlanDetailProvider(plan.id));
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

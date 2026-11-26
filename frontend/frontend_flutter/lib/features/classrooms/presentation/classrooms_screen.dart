@@ -44,206 +44,230 @@ Future<Classroom?> showClassroomFormDialog(
   return showDialog<Classroom>(
     context: context,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setState) => AlertDialog(
-        title: Text(existing == null ? 'Create Classroom' : 'Edit Classroom'),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Classroom Name (e.g. Grades 1 & 2 Multigrade - Acacia)',
-                      border: OutlineInputBorder(),
+      builder: (ctx, setState) {
+        final screenWidth = MediaQuery.sizeOf(ctx).width;
+        final isMobile = screenWidth < 440;
+
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: Text(existing == null ? 'Create Classroom' : 'Edit Classroom'),
+          content: SizedBox(
+            width: screenWidth > 540 ? 480 : double.maxFinite,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText:
+                            'Classroom Name (e.g. Grades 1 & 2 Multigrade)',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: schoolCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'School Name (Optional)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: schoolCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'School Name (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: sectionCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Section (e.g. Acacia)',
-                            border: OutlineInputBorder(),
-                          ),
+                    const SizedBox(height: 12),
+                    if (isMobile) ...[
+                      TextFormField(
+                        controller: sectionCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Section (e.g. Acacia)',
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: syCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'School Year',
-                            border: OutlineInputBorder(),
-                          ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: syCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'School Year',
+                          border: OutlineInputBorder(),
                         ),
+                      ),
+                    ] else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: sectionCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Section (e.g. Acacia)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: syCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'School Year',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (availableLevels.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        'Multigrade Levels',
+                        style: Theme.of(ctx).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: availableLevels.map((gl) {
+                          final selected = selectedGradeIds.contains(gl.id);
+                          return FilterChip(
+                            label: Text(gl.name),
+                            selected: selected,
+                            onSelected: (val) {
+                              setState(() {
+                                if (val) {
+                                  selectedGradeIds.add(gl.id);
+                                } else {
+                                  selectedGradeIds.remove(gl.id);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
                       ),
                     ],
-                  ),
-                  if (availableLevels.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    Text(
-                      'Multigrade Levels',
-                      style: Theme.of(ctx).textTheme.labelLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: availableLevels.map((gl) {
-                        final selected = selectedGradeIds.contains(gl.id);
-                        return FilterChip(
-                          label: Text(gl.name),
-                          selected: selected,
-                          onSelected: (val) {
-                            setState(() {
-                              if (val) {
-                                selectedGradeIds.add(gl.id);
-                              } else {
-                                selectedGradeIds.remove(gl.id);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String?>(
-                    initialValue: availablePlans.any(
-                      (p) => p.id == selectedLessonPlanId,
-                    )
-                        ? selectedLessonPlanId
-                        : null,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Active Lesson Plan (for Gradebook)',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('None selected'),
+                    DropdownButtonFormField<String?>(
+                      initialValue: availablePlans.any(
+                        (p) => p.id == selectedLessonPlanId,
+                      )
+                          ? selectedLessonPlanId
+                          : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Active Lesson Plan (for Gradebook)',
+                        border: OutlineInputBorder(),
                       ),
-                      ...availablePlans.map(
-                        (p) => DropdownMenuItem<String?>(
-                          value: p.id,
-                          child: Text(
-                            p.subject.isNotEmpty
-                                ? '${p.title} (${p.subject})'
-                                : p.title,
-                            overflow: TextOverflow.ellipsis,
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('None selected'),
+                        ),
+                        ...availablePlans.map(
+                          (p) => DropdownMenuItem<String?>(
+                            value: p.id,
+                            child: Text(
+                              p.subject.isNotEmpty
+                                  ? '${p.title} (${p.subject})'
+                                  : p.title,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
+                      ],
+                      onChanged: (val) =>
+                          setState(() => selectedLessonPlanId = val),
+                    ),
+                    if (existing != null) ...[
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Active Classroom'),
+                        value: isActive,
+                        onChanged: (val) => setState(() => isActive = val),
                       ),
                     ],
-                    onChanged: (val) =>
-                        setState(() => selectedLessonPlanId = val),
-                  ),
-                  if (existing != null) ...[
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Active Classroom'),
-                      value: isActive,
-                      onChanged: (val) => setState(() => isActive = val),
-                    ),
                   ],
-                ],
+                ),
               ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: isSaving ? null : () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: isSaving
-                ? null
-                : () async {
-                    if (!(formKey.currentState?.validate() ?? false)) return;
-                    setState(() => isSaving = true);
-                    try {
-                      final orderedIds = selectedGradeIds.toList()..sort();
-                      final names = orderedIds
-                          .map(
-                            (id) => availableLevels
-                                .where((g) => g.id == id)
-                                .map((g) => g.name)
-                                .firstOrNull,
-                          )
-                          .whereType<String>()
-                          .toList();
-                      final selectedPlan = selectedLessonPlanId == null
-                          ? null
-                          : availablePlans
-                              .where((p) => p.id == selectedLessonPlanId)
-                              .firstOrNull;
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setState(() => isSaving = true);
+                      try {
+                        final orderedIds = selectedGradeIds.toList()..sort();
+                        final names = orderedIds
+                            .map(
+                              (id) => availableLevels
+                                  .where((g) => g.id == id)
+                                  .map((g) => g.name)
+                                  .firstOrNull,
+                            )
+                            .whereType<String>()
+                            .toList();
+                        final selectedPlan = selectedLessonPlanId == null
+                            ? null
+                            : availablePlans
+                                .where((p) => p.id == selectedLessonPlanId)
+                                .firstOrNull;
 
-                      final Classroom result;
-                      if (existing == null) {
-                        result = await ref
-                            .read(classroomsProvider.notifier)
-                            .createClassroom(
-                              name: nameCtrl.text,
-                              schoolName: schoolCtrl.text,
-                              section: sectionCtrl.text,
-                              schoolYear: syCtrl.text,
-                              gradeLevelIds: orderedIds,
-                              gradeLevelNames: names,
-                              lessonPlanId: selectedLessonPlanId,
-                              lessonPlanTitle: selectedPlan?.title ?? '',
-                            );
-                      } else {
-                        result = await ref
-                            .read(classroomsProvider.notifier)
-                            .updateClassroom(
-                              classroomId: existing.id,
-                              name: nameCtrl.text,
-                              schoolName: schoolCtrl.text,
-                              section: sectionCtrl.text,
-                              schoolYear: syCtrl.text,
-                              isActive: isActive,
-                              gradeLevelIds: orderedIds,
-                              gradeLevelNames: names,
-                              lessonPlanId: selectedLessonPlanId,
-                              lessonPlanTitle: selectedPlan?.title ?? '',
-                            );
+                        final Classroom result;
+                        if (existing == null) {
+                          result = await ref
+                              .read(classroomsProvider.notifier)
+                              .createClassroom(
+                                name: nameCtrl.text,
+                                schoolName: schoolCtrl.text,
+                                section: sectionCtrl.text,
+                                schoolYear: syCtrl.text,
+                                gradeLevelIds: orderedIds,
+                                gradeLevelNames: names,
+                                lessonPlanId: selectedLessonPlanId,
+                                lessonPlanTitle: selectedPlan?.title ?? '',
+                              );
+                        } else {
+                          result = await ref
+                              .read(classroomsProvider.notifier)
+                              .updateClassroom(
+                                classroomId: existing.id,
+                                name: nameCtrl.text,
+                                schoolName: schoolCtrl.text,
+                                section: sectionCtrl.text,
+                                schoolYear: syCtrl.text,
+                                isActive: isActive,
+                                gradeLevelIds: orderedIds,
+                                gradeLevelNames: names,
+                                lessonPlanId: selectedLessonPlanId,
+                                lessonPlanTitle: selectedPlan?.title ?? '',
+                              );
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx, result);
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text('Failed to save: $e')),
+                          );
+                        }
+                      } finally {
+                        if (ctx.mounted) setState(() => isSaving = false);
                       }
-                      if (ctx.mounted) Navigator.pop(ctx, result);
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('Failed to save: $e')),
-                        );
-                      }
-                    } finally {
-                      if (ctx.mounted) setState(() => isSaving = false);
-                    }
-                  },
-            child: Text(existing == null ? 'Create' : 'Save'),
-          ),
-        ],
-      ),
+                    },
+              child: Text(existing == null ? 'Create' : 'Save'),
+            ),
+          ],
+        );
+      },
     ),
   );
 }
@@ -391,13 +415,20 @@ class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
                       ),
                     ),
                     if (cls.lessonPlanTitle.isNotEmpty)
-                      Chip(
-                        avatar: const Icon(
-                          Icons.menu_book_outlined,
-                          size: 16,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Chip(
+                          avatar: const Icon(
+                            Icons.menu_book_outlined,
+                            size: 16,
+                          ),
+                          label: Text(
+                            cls.lessonPlanTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          visualDensity: VisualDensity.compact,
                         ),
-                        label: Text(cls.lessonPlanTitle),
-                        visualDensity: VisualDensity.compact,
                       ),
                     if (cls.isPendingSync || cls.isLocalDraft)
                       const Chip(
@@ -470,8 +501,12 @@ class _ClassroomsScreenState extends ConsumerState<ClassroomsScreen> {
               data: (classrooms) {
                 if (classrooms.isEmpty) {
                   return const Center(
-                    child: Text(
-                      'No classrooms yet. Tap + to create your first class.',
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No classrooms yet. Tap + to create your first class.',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   );
                 }

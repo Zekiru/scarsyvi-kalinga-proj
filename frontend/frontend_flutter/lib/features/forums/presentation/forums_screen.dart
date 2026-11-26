@@ -55,82 +55,91 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
     final opened = await showDialog<Forum>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Open Lesson Plan Forum'),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Select a Lesson Plan to open or initialize its dedicated discussion workspace.',
-                    style: Theme.of(ctx).textTheme.bodyMedium,
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: const Text('Open Lesson Plan Forum'),
+            content: SizedBox(
+              width: screenWidth > 520 ? 460 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select a Lesson Plan to open or initialize its dedicated discussion workspace.',
+                        style: Theme.of(ctx).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<LessonPlan>(
+                        initialValue: selectedPlan,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Lesson Plan',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: plans
+                            .map(
+                              (lp) => DropdownMenuItem<LessonPlan>(
+                                value: lp,
+                                child: Text(
+                                  lp.subject.isNotEmpty
+                                      ? '${lp.title} (${lp.subject})'
+                                      : lp.title,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => selectedPlan = val);
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<LessonPlan>(
-                    initialValue: selectedPlan,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Lesson Plan',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: plans
-                        .map(
-                          (lp) => DropdownMenuItem<LessonPlan>(
-                            value: lp,
-                            child: Text(
-                              lp.subject.isNotEmpty
-                                  ? '${lp.title} (${lp.subject})'
-                                  : lp.title,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => selectedPlan = val);
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      setState(() => isSubmitting = true);
-                      try {
-                        final forum = await ref
-                            .read(forumsProvider.notifier)
-                            .openOrCreateForumForLessonPlan(
-                              lessonPlanId: selectedPlan.id,
-                              lessonPlanTitle: selectedPlan.title,
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        setState(() => isSubmitting = true);
+                        try {
+                          final forum = await ref
+                              .read(forumsProvider.notifier)
+                              .openOrCreateForumForLessonPlan(
+                                lessonPlanId: selectedPlan.id,
+                                lessonPlanTitle: selectedPlan.title,
+                              );
+                          if (ctx.mounted) Navigator.pop(ctx, forum);
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to open forum: $e'),
+                              ),
                             );
-                        if (ctx.mounted) Navigator.pop(ctx, forum);
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text('Failed to open forum: $e')),
-                          );
+                          }
+                        } finally {
+                          if (ctx.mounted) setState(() => isSubmitting = false);
                         }
-                      } finally {
-                        if (ctx.mounted) setState(() => isSubmitting = false);
-                      }
-                    },
-              icon: const Icon(Icons.forum_outlined, size: 18),
-              label: Text(isSubmitting ? 'Opening...' : 'Open Forum'),
-            ),
-          ],
-        ),
+                      },
+                icon: const Icon(Icons.forum_outlined, size: 18),
+                label: Text(isSubmitting ? 'Opening...' : 'Open Forum'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -278,6 +287,7 @@ class _ForumsScreenState extends ConsumerState<ForumsScreen> {
                     if (isModerator)
                       IconButton(
                         tooltip: 'Delete Forum',
+                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.delete_outline, size: 20),
                         onPressed: () async {
                           final confirmed = await showDialog<bool>(

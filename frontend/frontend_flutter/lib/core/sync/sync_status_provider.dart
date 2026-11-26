@@ -8,6 +8,19 @@ import '../network/connectivity_provider.dart';
 import 'sync_operation.dart';
 import 'sync_queue_service.dart';
 
+class _SyncTickNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void increment() => state++;
+}
+
+/// Increments after every completed sync cycle so nested `.family` providers
+/// (classroom grades, attendance, forum threads/posts, lesson details)
+/// automatically reload and clear optimistic "Queued" states.
+final syncCompletedTickProvider =
+    NotifierProvider<_SyncTickNotifier, int>(_SyncTickNotifier.new);
+
 class SyncStatusState {
   const SyncStatusState({
     this.pendingCount = 0,
@@ -75,6 +88,9 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
     ]);
     ref.invalidate(participatedForumIdsProvider);
     await ref.read(offlinePrefetchServiceProvider).prefetchOwnedData();
+
+    // Flush all open detail screens & nested .family providers
+    ref.read(syncCompletedTickProvider.notifier).increment();
   }
 
   Future<void> syncNow() async {

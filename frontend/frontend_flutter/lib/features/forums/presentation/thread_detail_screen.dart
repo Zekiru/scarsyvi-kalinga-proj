@@ -62,61 +62,68 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Thread'),
-        content: SizedBox(
-          width: 460,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Thread Title',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+      builder: (ctx) {
+        final screenWidth = MediaQuery.sizeOf(ctx).width;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: const Text('Edit Thread'),
+          content: SizedBox(
+            width: screenWidth > 520 ? 460 : double.maxFinite,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Thread Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: bodyCtrl,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Body',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: bodyCtrl,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Body',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              await ref.read(forumRepositoryProvider).updateThread(
-                    thread: thread,
-                    title: titleCtrl.text,
-                    body: bodyCtrl.text,
-                  );
-              ref.read(syncStatusProvider.notifier).refreshCounts();
-              ref.invalidate(threadDetailProvider(widget.threadId));
-              ref.invalidate(forumThreadsProvider(thread.forumId));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save Changes'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                await ref.read(forumRepositoryProvider).updateThread(
+                      thread: thread,
+                      title: titleCtrl.text,
+                      body: bodyCtrl.text,
+                    );
+                ref.read(syncStatusProvider.notifier).refreshCounts();
+                ref.invalidate(threadDetailProvider(widget.threadId));
+                ref.invalidate(forumThreadsProvider(thread.forumId));
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Save Changes'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -156,45 +163,52 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Reply'),
-        content: SizedBox(
-          width: 440,
-          child: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: contentCtrl,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Reply Content',
-                border: OutlineInputBorder(),
+      builder: (ctx) {
+        final screenWidth = MediaQuery.sizeOf(ctx).width;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: const Text('Edit Reply'),
+          content: SizedBox(
+            width: screenWidth > 500 ? 440 : double.maxFinite,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: TextFormField(
+                  controller: contentCtrl,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'Reply Content',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              await ref.read(forumRepositoryProvider).updatePost(
-                    threadId: thread.id,
-                    post: post,
-                    content: contentCtrl.text,
-                  );
-              ref.read(syncStatusProvider.notifier).refreshCounts();
-              ref.invalidate(threadDetailProvider(widget.threadId));
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                await ref.read(forumRepositoryProvider).updatePost(
+                      threadId: thread.id,
+                      post: post,
+                      content: contentCtrl.text,
+                    );
+                ref.read(syncStatusProvider.notifier).refreshCounts();
+                ref.invalidate(threadDetailProvider(widget.threadId));
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -234,6 +248,7 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
     final currentUser = ref.watch(currentUserProvider);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final isNarrow = MediaQuery.sizeOf(context).width < 400;
 
     return threadAsync.when(
       loading: () => Scaffold(
@@ -263,9 +278,19 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
             .toList();
         final postById = {for (final p in thread.posts) p.id: p};
 
+        final hasThreadBadges = thread.isPinned ||
+            thread.isHidden ||
+            thread.isPendingSync ||
+            thread.isLocalDraft ||
+            thread.isLocked;
+
         return Scaffold(
           appBar: AppBar(
-            title: Text(thread.title),
+            title: Text(
+              thread.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             actions: [
               if (canEditOrDeleteThread)
                 PopupMenuButton<String>(
@@ -360,44 +385,50 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    thread.authorName.isNotEmpty
-                                        ? '@${thread.authorName}'
-                                        : 'Author',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+                                  Expanded(
+                                    child: Text(
+                                      thread.authorName.isNotEmpty
+                                          ? '@${thread.authorName}'
+                                          : 'Author',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
-                                  if (thread.isPinned)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 4),
-                                      child: Chip(
+                                ],
+                              ),
+                              if (hasThreadBadges) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    if (thread.isPinned)
+                                      const Chip(
                                         label: Text('Pinned'),
                                         visualDensity: VisualDensity.compact,
                                       ),
-                                    ),
-                                  if (thread.isHidden)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 4),
-                                      child: Chip(
+                                    if (thread.isHidden)
+                                      const Chip(
                                         label: Text('Hidden'),
                                         visualDensity: VisualDensity.compact,
                                       ),
-                                    ),
-                                  if (thread.isPendingSync ||
-                                      thread.isLocalDraft)
-                                    const Chip(
-                                      label: Text('Queued'),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  if (thread.isLocked)
-                                    const Chip(
-                                      label: Text('Locked'),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                ],
-                              ),
+                                    if (thread.isPendingSync ||
+                                        thread.isLocalDraft)
+                                      const Chip(
+                                        label: Text('Queued'),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    if (thread.isLocked)
+                                      const Chip(
+                                        label: Text('Locked'),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                  ],
+                                ),
+                              ],
                               if (thread.body.isNotEmpty) ...[
                                 const SizedBox(height: 12),
                                 Text(
@@ -438,10 +469,20 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
                           final isPostAuthor = currentUser != null &&
                               post.authorId == currentUser.id;
                           final canManagePost = isPostAuthor || canModerate;
+                          final hasPostBadges = post.isPendingSync ||
+                              post.isLocalDraft ||
+                              post.isHidden;
+
+                          final authorLabel = post.authorName.isNotEmpty
+                              ? '@${post.authorName}'
+                              : 'Member';
+                          final roleSuffix = post.authorRole.isNotEmpty
+                              ? ' (${post.authorRole})'
+                              : '';
 
                           return Padding(
                             padding: EdgeInsets.only(
-                              left: isNested ? 24 : 0,
+                              left: isNested ? (isNarrow ? 12 : 24) : 0,
                               bottom: 8,
                             ),
                             child: Card(
@@ -457,39 +498,22 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
                                   children: [
                                     Row(
                                       children: [
-                                        Text(
-                                          post.authorName.isNotEmpty
-                                              ? '@${post.authorName}'
-                                              : 'Member',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13,
+                                        Expanded(
+                                          child: Text(
+                                            '$authorLabel$roleSuffix',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ),
-                                        if (post.authorRole.isNotEmpty) ...[
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            '(${post.authorRole})',
-                                            style: theme.textTheme.bodySmall,
-                                          ),
-                                        ],
-                                        const Spacer(),
-                                        if (post.isPendingSync ||
-                                            post.isLocalDraft)
-                                          const Chip(
-                                            label: Text('Queued'),
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
-                                        if (post.isHidden)
-                                          const Chip(
-                                            label: Text('Hidden'),
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
                                         if (!isLockedForUser)
                                           IconButton(
                                             tooltip: 'Reply to comment',
+                                            visualDensity:
+                                                VisualDensity.compact,
                                             icon: const Icon(
                                               Icons.reply,
                                               size: 18,
@@ -504,6 +528,7 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
                                         if (canManagePost)
                                           PopupMenuButton<String>(
                                             iconSize: 18,
+                                            padding: EdgeInsets.zero,
                                             onSelected: (action) async {
                                               if (action == 'edit') {
                                                 await _showEditPostDialog(
@@ -559,6 +584,28 @@ class _ThreadDetailScreenState extends ConsumerState<ThreadDetailScreen> {
                                           ),
                                       ],
                                     ),
+                                    if (hasPostBadges) ...[
+                                      const SizedBox(height: 4),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          if (post.isPendingSync ||
+                                              post.isLocalDraft)
+                                            const Chip(
+                                              label: Text('Queued'),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                          if (post.isHidden)
+                                            const Chip(
+                                              label: Text('Hidden'),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
                                     if (isNested) ...[
                                       const SizedBox(height: 4),
                                       Container(

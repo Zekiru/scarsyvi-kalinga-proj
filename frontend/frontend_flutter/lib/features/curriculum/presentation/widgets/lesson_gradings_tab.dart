@@ -74,9 +74,9 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                   ),
                 Expanded(
                   child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                     itemCount: filteredTasks.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, i) {
                       final task = filteredTasks[i];
                       return Card(
@@ -86,6 +86,7 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: Text(
@@ -96,11 +97,10 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                           ?.copyWith(fontWeight: FontWeight.bold),
                                     ),
                                   ),
-                                  if (task.isPendingSync)
-                                    const Chip(label: Text('Queued')),
                                   if (widget.canEdit)
                                     IconButton(
                                       tooltip: 'Edit Grading Task',
+                                      visualDensity: VisualDensity.compact,
                                       icon: const Icon(
                                         Icons.edit_outlined,
                                         size: 20,
@@ -114,6 +114,7 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                   if (widget.canDelete)
                                     IconButton(
                                       tooltip: 'Delete Grading Task',
+                                      visualDensity: VisualDensity.compact,
                                       icon: Icon(
                                         Icons.delete_outline,
                                         size: 20,
@@ -152,6 +153,11 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
                                       ),
                                       label:
                                           Text('Max Score: ${task.maxScore} pts'),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  if (task.isPendingSync)
+                                    const Chip(
+                                      label: Text('Queued'),
                                       visualDensity: VisualDensity.compact,
                                     ),
                                 ],
@@ -248,122 +254,129 @@ class _LessonGradingsTabState extends ConsumerState<LessonGradingsTab> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text(
-            existing == null ? 'Add Grading Task' : 'Edit Grading Task',
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<LessonGradeLevel>(
-                  initialValue: selectedGrade,
-                  decoration: const InputDecoration(
-                    labelText: 'Grade Level (lesson_grade_level)',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: widget.plan.gradeLevels
-                      .map(
-                        (g) => DropdownMenuItem<LessonGradeLevel>(
-                          value: g,
-                          child: Text(
-                            g.gradeLevelName.isNotEmpty
-                                ? g.gradeLevelName
-                                : 'Grade ${g.gradeLevelId}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => selectedGrade = val);
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Task Name (e.g. Pagsasanay sa Addition)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: Text(
+              existing == null ? 'Add Grading Task' : 'Edit Grading Task',
+            ),
+            content: SizedBox(
+              width: screenWidth > 500 ? 440 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: weightCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Grade Weight (%)',
-                          border: OutlineInputBorder(),
-                        ),
+                    DropdownButtonFormField<LessonGradeLevel>(
+                      initialValue: selectedGrade,
+                      decoration: const InputDecoration(
+                        labelText: 'Grade Level',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: widget.plan.gradeLevels
+                          .map(
+                            (g) => DropdownMenuItem<LessonGradeLevel>(
+                              value: g,
+                              child: Text(
+                                g.gradeLevelName.isNotEmpty
+                                    ? g.gradeLevelName
+                                    : 'Grade ${g.gradeLevelId}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => selectedGrade = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Task Name (e.g. Pagsasanay sa Addition)',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: maxScoreCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Max Score',
-                          border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: weightCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Weight (%)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
                         ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: maxScoreCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Max Score',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Task Description / Instructions',
+                        border: OutlineInputBorder(),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Task Description / Instructions',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) return;
-                final repo = ref.read(curriculumRepositoryProvider);
-                if (existing == null) {
-                  await repo.addLessonGrading(
-                    lessonPlanId: widget.plan.id,
-                    lessonGradeLevelId: selectedGrade.id,
-                    gradeLevelName: selectedGrade.gradeLevelName,
-                    taskName: nameCtrl.text,
-                    taskDescription: descCtrl.text,
-                    gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
-                    maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
-                  );
-                } else {
-                  await repo.updateLessonGrading(
-                    lessonPlanId: widget.plan.id,
-                    existing: existing,
-                    lessonGradeLevelId: selectedGrade.id,
-                    gradeLevelName: selectedGrade.gradeLevelName,
-                    taskName: nameCtrl.text,
-                    taskDescription: descCtrl.text,
-                    gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
-                    maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
-                  );
-                }
-                ref.read(syncStatusProvider.notifier).refreshCounts();
-                ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  final repo = ref.read(curriculumRepositoryProvider);
+                  if (existing == null) {
+                    await repo.addLessonGrading(
+                      lessonPlanId: widget.plan.id,
+                      lessonGradeLevelId: selectedGrade.id,
+                      gradeLevelName: selectedGrade.gradeLevelName,
+                      taskName: nameCtrl.text,
+                      taskDescription: descCtrl.text,
+                      gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
+                      maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
+                    );
+                  } else {
+                    await repo.updateLessonGrading(
+                      lessonPlanId: widget.plan.id,
+                      existing: existing,
+                      lessonGradeLevelId: selectedGrade.id,
+                      gradeLevelName: selectedGrade.gradeLevelName,
+                      taskName: nameCtrl.text,
+                      taskDescription: descCtrl.text,
+                      gradeWeight: double.tryParse(weightCtrl.text) ?? 0,
+                      maxScore: int.tryParse(maxScoreCtrl.text) ?? 10,
+                    );
+                  }
+                  ref.read(syncStatusProvider.notifier).refreshCounts();
+                  ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -44,7 +44,23 @@ class SyncQueueService {
   int get failedCount => allOperations
       .where((op) => op.status == SyncOpStatus.failedNeedsReview)
       .length;
-  
+
+  bool get hasActiveOperations => allOperations.isNotEmpty;
+
+  /// Returns true if an operation for [tempClientId] or [entityType] is still
+  /// queued or awaiting user review.
+  bool isEntityQueued({String? tempClientId, String? entityType}) {
+    for (final op in allOperations) {
+      if (tempClientId != null && op.tempClientId == tempClientId) {
+        return true;
+      }
+      if (entityType != null && op.entityType == entityType) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<String?> _checkRemoteConflict({
     required String endpoint,
     required DateTime queuedAt,
@@ -161,16 +177,18 @@ class SyncQueueService {
           );
 
           // Record newly created server PK and reconcile local Hive caches
-          if (op.tempClientId != null &&
-              op.primaryKeyField != null &&
-              response is Map<String, dynamic>) {
-            final newId = response[op.primaryKeyField] ?? response['id'];
-            final parsedId =
-                newId is int ? newId : int.tryParse(newId?.toString() ?? '');
+          if (op.tempClientId != null) {
+            int? parsedId;
+            if (op.primaryKeyField != null &&
+                response is Map<String, dynamic>) {
+              final newId = response[op.primaryKeyField] ?? response['id'];
+              parsedId =
+                  newId is int ? newId : int.tryParse(newId?.toString() ?? '');
+            }
             if (parsedId != null) {
               await _idMappings.saveMapping(op.tempClientId!, parsedId);
-              await _reconcileLocalCacheAfterCreate(op.tempClientId!, parsedId);
             }
+            await _reconcileLocalCacheAfterCreate(op.tempClientId!, parsedId);
           }
 
           await op.delete();
@@ -185,7 +203,9 @@ class SyncQueueService {
           }
 
           if (e.isUniqueConstraintCollision) {
-            // Retry hit an already-created unique record (e.g. LessonGradeLevel or StudentGrade)
+            if (op.tempClientId != null) {
+              await _reconcileLocalCacheAfterCreate(op.tempClientId!, null);
+            }
             await op.delete();
             onQueueChanged?.call();
             continue;
@@ -200,17 +220,76 @@ class SyncQueueService {
           onQueueChanged?.call();
         }
       }
+
+      // If all queued operations have drained, clear any remaining optimistic
+      // `isPendingSync` flags across Hive caches (e.g., from offline PATCH edits).
+      if (!hasActiveOperations) {
+        await clearAllPendingSyncFlags();
+      }
     } finally {
       _isProcessing = false;
     }
   }
 
-  /// Removes synced `tmp_*` draft entries from list caches and rewrites any
-  /// remaining `tmp_*` references across feature Hive boxes so subsequent
-  /// network fetches don't keep stale local drafts alongside server records.
+  /// Universally clears `"isPendingSync":true` flags and orphaned `temp_*`
+  /// list items across all feature Hive boxes once the sync queue is empty.
+  Future<void> clearAllPendingSyncFlags() async {
+    final boxes = <Box<String>>[
+      HiveBoxes.curriculum,
+      HiveBoxes.classrooms,
+      HiveBoxes.forums,
+    ];
+
+    for (final box in boxes) {
+      if (!box.isOpen) continue;
+      final keysToDelete = <dynamic>[];
+      final updates = <dynamic, String>{};
+
+      for (final key in box.keys) {
+        final keyStr = key.toString();
+        if (keyStr.contains(IdMappingStore.tempPrefix)) {
+          keysToDelete.add(key);
+          continue;
+        }
+        final raw = box.get(key);
+        if (raw == null) continue;
+        if (!raw.contains('"isPendingSync":true') &&
+            !raw.contains(IdMappingStore.tempPrefix)) {
+          continue;
+        }
+
+        var cleaned =
+            raw.replaceAll('"isPendingSync":true', '"isPendingSync":false');
+        try {
+          final decoded = jsonDecode(cleaned);
+          if (decoded is List) {
+            final filtered = decoded.where((entry) {
+              if (entry is Map) {
+                final idVal = entry['id']?.toString() ?? '';
+                if (idVal.startsWith(IdMappingStore.tempPrefix)) return false;
+              }
+              return true;
+            }).toList();
+            cleaned = jsonEncode(filtered);
+          }
+        } catch (_) {}
+        updates[key] = cleaned;
+      }
+
+      for (final k in keysToDelete) {
+        await box.delete(k);
+      }
+      for (final entry in updates.entries) {
+        await box.put(entry.key, entry.value);
+      }
+    }
+  }
+
+  /// Removes synced `temp_*` draft entries from list caches and rewrites any
+  /// remaining `temp_*` references across feature Hive boxes.
   Future<void> _reconcileLocalCacheAfterCreate(
     String tempClientId,
-    int serverId,
+    int? serverId,
   ) async {
     final boxes = <Box<String>>[
       HiveBoxes.curriculum,
@@ -228,7 +307,6 @@ class SyncQueueService {
         final raw = box.get(key);
         if (raw == null) continue;
 
-        // Delete per-entity detail cache keyed by the old temp ID
         if (keyStr.endsWith('_$tempClientId')) {
           keysToDelete.add(key);
           continue;
@@ -239,8 +317,6 @@ class SyncQueueService {
         try {
           final decoded = jsonDecode(raw);
           if (decoded is List) {
-            // Filter out the temporary draft item from cached list collections;
-            // the fresh server item will be written by the post-sync refresh.
             final filtered = decoded.where((entry) {
               if (entry is Map) {
                 final idVal = entry['id']?.toString() ?? '';
@@ -248,14 +324,18 @@ class SyncQueueService {
               }
               return true;
             }).toList();
-            final replaced = jsonEncode(filtered)
-                .replaceAll('"$tempClientId"', '$serverId');
-            updates[key] = replaced;
-          } else {
+            var encoded = jsonEncode(filtered);
+            if (serverId != null) {
+              encoded = encoded.replaceAll('"$tempClientId"', '$serverId');
+            }
+            updates[key] = encoded;
+          } else if (serverId != null) {
             updates[key] = raw.replaceAll('"$tempClientId"', '$serverId');
           }
         } catch (_) {
-          updates[key] = raw.replaceAll(tempClientId, '$serverId');
+          if (serverId != null) {
+            updates[key] = raw.replaceAll(tempClientId, '$serverId');
+          }
         }
       }
 
@@ -280,6 +360,10 @@ class SyncQueueService {
   }
 
   Future<void> discardOperation(String opId) async {
+    final op = _queueBox.get(opId);
+    if (op?.tempClientId != null) {
+      await _reconcileLocalCacheAfterCreate(op!.tempClientId!, null);
+    }
     await _queueBox.delete(opId);
   }
 

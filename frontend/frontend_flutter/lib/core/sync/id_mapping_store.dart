@@ -28,6 +28,13 @@ class IdMappingStore {
     return raw != null ? int.tryParse(raw) : null;
   }
 
+  /// Resolves a `temp_*` string ID to its mapped server primary key string,
+  /// or returns [id] unchanged if it is already a server ID or unmapped.
+  String resolveId(String id) {
+    if (!id.startsWith(tempPrefix)) return id;
+    return _box.get(id) ?? id;
+  }
+
   bool hasMapping(String tempId) => _box.containsKey(tempId);
 
   /// Replaces any `temp_*` substrings in an endpoint URL with mapped integer PKs.

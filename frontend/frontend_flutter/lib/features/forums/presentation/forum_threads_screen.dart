@@ -41,65 +41,72 @@ class _ForumThreadsScreenState extends ConsumerState<ForumThreadsScreen> {
 
     final created = await showDialog<ForumThread>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Discussion Thread'),
-        content: SizedBox(
-          width: 460,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Thread Title',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+      builder: (ctx) {
+        final screenWidth = MediaQuery.sizeOf(ctx).width;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          title: const Text('New Discussion Thread'),
+          content: SizedBox(
+            width: screenWidth > 520 ? 460 : double.maxFinite,
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Thread Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: bodyCtrl,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Opening Message / Adaptation Proposal',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: bodyCtrl,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Opening Message / Adaptation Proposal',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              final user = ref.read(currentUserProvider);
-              final thread =
-                  await ref.read(forumRepositoryProvider).createThread(
-                        forumId: _forum.id,
-                        title: titleCtrl.text,
-                        body: bodyCtrl.text,
-                        authorId: user?.id,
-                        authorName: user?.username ?? '',
-                      );
-              ref.read(syncStatusProvider.notifier).refreshCounts();
-              ref.invalidate(forumThreadsProvider(_forum.id));
-              ref.read(forumsProvider.notifier).refresh();
-              if (ctx.mounted) Navigator.pop(ctx, thread);
-            },
-            child: const Text('Post Thread'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                final user = ref.read(currentUserProvider);
+                final thread =
+                    await ref.read(forumRepositoryProvider).createThread(
+                          forumId: _forum.id,
+                          title: titleCtrl.text,
+                          body: bodyCtrl.text,
+                          authorId: user?.id,
+                          authorName: user?.username ?? '',
+                        );
+                ref.read(syncStatusProvider.notifier).refreshCounts();
+                ref.invalidate(forumThreadsProvider(_forum.id));
+                ref.read(forumsProvider.notifier).refresh();
+                if (ctx.mounted) Navigator.pop(ctx, thread);
+              },
+              child: const Text('Post Thread'),
+            ),
+          ],
+        );
+      },
     );
 
     if (created != null && mounted) {
@@ -132,9 +139,15 @@ class _ForumThreadsScreenState extends ConsumerState<ForumThreadsScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_forum.displayTitle),
+            Text(
+              _forum.displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             Text(
               'Lesson Plan Discussion Workspace',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -247,72 +260,14 @@ class _ForumThreadsScreenState extends ConsumerState<ForumThreadsScreen> {
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final thread = visible[index];
+                      final hasBadges = thread.isPendingSync ||
+                          thread.isLocalDraft ||
+                          thread.isHidden ||
+                          thread.isLocked;
+
                       return Card(
                         clipBehavior: Clip.antiAlias,
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: thread.isPinned
-                                ? colors.primaryContainer
-                                : colors.surfaceContainerHighest,
-                            child: Icon(
-                              thread.isPinned
-                                  ? Icons.push_pin
-                                  : (thread.isLocked
-                                      ? Icons.lock_outline
-                                      : Icons.chat_bubble_outline),
-                              color: thread.isPinned
-                                  ? colors.onPrimaryContainer
-                                  : colors.onSurfaceVariant,
-                            ),
-                          ),
-                          title: Text(
-                            thread.title,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (thread.body.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  thread.body,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                              const SizedBox(height: 4),
-                              Text(
-                                [
-                                  if (thread.authorName.isNotEmpty)
-                                    'by @${thread.authorName}',
-                                  '${thread.postCount} ${thread.postCount == 1 ? 'reply' : 'replies'}',
-                                ].join(' • '),
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                          trailing: Wrap(
-                            spacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              if (thread.isPendingSync || thread.isLocalDraft)
-                                const Chip(
-                                  label: Text('Queued'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              if (thread.isHidden)
-                                const Chip(
-                                  label: Text('Hidden'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              if (thread.isLocked)
-                                const Chip(
-                                  label: Text('Locked'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              const Icon(Icons.chevron_right),
-                            ],
-                          ),
+                        child: InkWell(
                           onTap: () async {
                             await Navigator.of(context).push(
                               MaterialPageRoute(
@@ -327,6 +282,97 @@ class _ForumThreadsScreenState extends ConsumerState<ForumThreadsScreen> {
                               ref.invalidate(forumThreadsProvider(_forum.id));
                             }
                           },
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: thread.isPinned
+                                          ? colors.primaryContainer
+                                          : colors.surfaceContainerHighest,
+                                      child: Icon(
+                                        thread.isPinned
+                                            ? Icons.push_pin
+                                            : (thread.isLocked
+                                                ? Icons.lock_outline
+                                                : Icons.chat_bubble_outline),
+                                        color: thread.isPinned
+                                            ? colors.onPrimaryContainer
+                                            : colors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            thread.title,
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (thread.body.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              thread.body,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ],
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            [
+                                              if (thread.authorName.isNotEmpty)
+                                                'by @${thread.authorName}',
+                                              '${thread.postCount} ${thread.postCount == 1 ? 'reply' : 'replies'}',
+                                            ].join(' • '),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right),
+                                  ],
+                                ),
+                                if (hasBadges) ...[
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: [
+                                      if (thread.isPendingSync ||
+                                          thread.isLocalDraft)
+                                        const Chip(
+                                          label: Text('Queued'),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      if (thread.isHidden)
+                                        const Chip(
+                                          label: Text('Hidden'),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      if (thread.isLocked)
+                                        const Chip(
+                                          label: Text('Locked'),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },

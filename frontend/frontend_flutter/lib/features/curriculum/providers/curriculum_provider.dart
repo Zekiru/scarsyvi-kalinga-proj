@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/sync/id_mapping_store.dart';
 import '../../../core/sync/sync_status_provider.dart';
 import '../../accounts/providers/auth_provider.dart';
 import '../data/curriculum_models.dart';
@@ -167,6 +168,8 @@ class LessonPlansNotifier extends AsyncNotifier<List<LessonPlan>> {
 
 final lessonPlanDetailProvider =
     FutureProvider.family<LessonPlan, String>((ref, id) async {
+  ref.watch(syncCompletedTickProvider);
+  final resolvedId = ref.read(idMappingStoreProvider).resolveId(id);
   final repo = ref.watch(curriculumRepositoryProvider);
-  return repo.fetchLessonPlanDetail(id);
+  return repo.fetchLessonPlanDetail(resolvedId);
 });

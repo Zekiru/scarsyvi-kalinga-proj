@@ -259,12 +259,16 @@ class HomeScreen extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      'Suggested in Similar Learning Areas',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    Expanded(
+                      child: Text(
+                        'Suggested in Similar Learning Areas',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
                     ),
                   ],
                 ),
@@ -324,6 +328,8 @@ class HomeScreen extends ConsumerWidget {
                   clipBehavior: Clip.antiAlias,
                   child: ListTile(
                     dense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                     leading: CircleAvatar(
                       radius: 18,
                       backgroundColor:
@@ -429,7 +435,9 @@ class _GreetingBanner extends StatelessWidget {
                     children: [
                       Text(
                         greeting,
-                        style: theme.textTheme.titleLarge?.copyWith(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colors.onPrimaryContainer,
                         ),
@@ -437,6 +445,8 @@ class _GreetingBanner extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         school.isNotEmpty ? '$roleLabel • $school' : roleLabel,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color:
                               colors.onPrimaryContainer.withValues(alpha: 0.85),
@@ -530,10 +540,14 @@ class _SectionHeader extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: colors.primary),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -542,16 +556,18 @@ class _SectionHeader extends StatelessWidget {
             backgroundColor: colors.secondaryContainer,
             textColor: colors.onSecondaryContainer,
           ),
-          const Spacer(),
-          if (actionLabel != null && onAction != null)
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(width: 8),
             FilledButton.tonalIcon(
               onPressed: onAction,
               icon: Icon(actionIcon ?? Icons.arrow_forward, size: 16),
               label: Text(actionLabel!),
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -580,6 +596,7 @@ class _ClassroomSummaryTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         leading: CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           child: Icon(
@@ -634,6 +651,7 @@ class _LessonPlanSummaryTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         leading: CircleAvatar(
           backgroundColor: isSuggested
               ? colors.tertiaryContainer
@@ -662,11 +680,19 @@ class _LessonPlanSummaryTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (badgeText != null && badgeText!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Chip(
-                  label: Text(badgeText!),
-                  visualDensity: VisualDensity.compact,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 88),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Chip(
+                    label: Text(
+                      badgeText!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  ),
                 ),
               ),
             const Icon(Icons.chevron_right),
@@ -694,18 +720,20 @@ class _EmptySectionCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Text(
-                message,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(width: 12),
-            OutlinedButton(
-              onPressed: onPressed,
-              child: Text(buttonLabel),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton(
+                onPressed: onPressed,
+                child: Text(buttonLabel),
+              ),
             ),
           ],
         ),

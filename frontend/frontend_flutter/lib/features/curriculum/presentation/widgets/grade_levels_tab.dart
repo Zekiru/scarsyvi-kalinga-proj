@@ -23,7 +23,7 @@ class GradeLevelsTab extends ConsumerWidget {
       body: plan.gradeLevels.isEmpty
           ? const Center(child: Text('No target grade levels attached yet.'))
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
               itemCount: plan.gradeLevels.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
@@ -32,6 +32,10 @@ class GradeLevelsTab extends ConsumerWidget {
                     ? item.gradeLevelName
                     : 'Grade Level #${item.gradeLevelId}';
 
+                final hasChips = item.flows.isNotEmpty ||
+                    item.gradingTasks.isNotEmpty ||
+                    item.isPendingSync;
+
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -39,6 +43,7 @@ class GradeLevelsTab extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Expanded(
                               child: Text(
@@ -49,28 +54,10 @@ class GradeLevelsTab extends ConsumerWidget {
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                             ),
-                            if (item.flows.isNotEmpty)
-                              Chip(
-                                label: Text('${item.flows.length} flow steps'),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            if (item.gradingTasks.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 6),
-                                child: Chip(
-                                  label:
-                                      Text('${item.gradingTasks.length} tasks'),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                            if (item.isPendingSync)
-                              const Padding(
-                                padding: EdgeInsets.only(left: 6),
-                                child: Chip(label: Text('Queued')),
-                              ),
                             if (canEdit)
                               IconButton(
                                 tooltip: 'Edit Grade Level & Standards',
+                                visualDensity: VisualDensity.compact,
                                 icon: const Icon(Icons.edit_outlined, size: 20),
                                 onPressed: () => _gradeDialog(
                                   context,
@@ -81,6 +68,7 @@ class GradeLevelsTab extends ConsumerWidget {
                             if (canDelete)
                               IconButton(
                                 tooltip: 'Delete Grade Level',
+                                visualDensity: VisualDensity.compact,
                                 icon: Icon(
                                   Icons.delete_outline,
                                   size: 20,
@@ -91,6 +79,32 @@ class GradeLevelsTab extends ConsumerWidget {
                               ),
                           ],
                         ),
+                        if (hasChips) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if (item.flows.isNotEmpty)
+                                Chip(
+                                  label:
+                                      Text('${item.flows.length} flow steps'),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              if (item.gradingTasks.isNotEmpty)
+                                Chip(
+                                  label:
+                                      Text('${item.gradingTasks.length} tasks'),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              if (item.isPendingSync)
+                                const Chip(
+                                  label: Text('Queued'),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                            ],
+                          ),
+                        ],
                         if (item.contentStandard.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           _LabeledBlock(
@@ -228,156 +242,160 @@ class GradeLevelsTab extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text(
-            existing == null
-                ? 'Attach Grade Level & Standards'
-                : 'Edit Grade Level & Standards',
-          ),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<GradeLevel>(
-                    initialValue: selected,
-                    decoration: const InputDecoration(
-                      labelText: 'Grade Level',
-                      border: OutlineInputBorder(),
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: Text(
+              existing == null
+                  ? 'Attach Grade Level & Standards'
+                  : 'Edit Grade Level & Standards',
+            ),
+            content: SizedBox(
+              width: screenWidth > 540 ? 480 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<GradeLevel>(
+                      initialValue: selected,
+                      decoration: const InputDecoration(
+                        labelText: 'Grade Level',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: levels
+                          .map(
+                            (g) =>
+                                DropdownMenuItem(value: g, child: Text(g.name)),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => selected = val);
+                      },
                     ),
-                    items: levels
-                        .map(
-                          (g) => DropdownMenuItem(value: g, child: Text(g.name)),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => selected = val);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: contentCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Content Standard (i_content_standard)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: contentCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Content Standard (I)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: perfCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Performance Standard (i_performance_standard)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: perfCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Performance Standard (I)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: compCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Competencies & Codes (i_competencies_codes)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: compCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Competencies & Codes (I)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: objCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Learning Objectives (i_objectives)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: objCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Learning Objectives (I)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: contextCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Learner Context (l_context)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: contextCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Learner Context (L)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reflectCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Reflection Questions (w_reflection_questions)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: reflectCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Reflection Questions (W)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: remCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Remediation (re_remediation)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: remCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Remediation (RE)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: enrichCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Enrichment (re_enrichment)',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: enrichCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Enrichment (RE)',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final repo = ref.read(curriculumRepositoryProvider);
-                if (existing == null) {
-                  await repo.addLessonGradeLevel(
-                    lessonPlanId: plan.id,
-                    gradeLevelId: selected.id,
-                    gradeLevelName: selected.name,
-                    contentStandard: contentCtrl.text,
-                    performanceStandard: perfCtrl.text,
-                    learningCompetencies: compCtrl.text,
-                    specificObjectives: objCtrl.text,
-                    learnerContext: contextCtrl.text,
-                    reflectionQuestions: reflectCtrl.text,
-                    remediation: remCtrl.text,
-                    enrichment: enrichCtrl.text,
-                  );
-                } else {
-                  await repo.updateLessonGradeLevel(
-                    lessonPlanId: plan.id,
-                    existing: existing,
-                    gradeLevelId: selected.id,
-                    gradeLevelName: selected.name,
-                    contentStandard: contentCtrl.text,
-                    performanceStandard: perfCtrl.text,
-                    learningCompetencies: compCtrl.text,
-                    specificObjectives: objCtrl.text,
-                    learnerContext: contextCtrl.text,
-                    reflectionQuestions: reflectCtrl.text,
-                    remediation: remCtrl.text,
-                    enrichment: enrichCtrl.text,
-                  );
-                }
-                ref.read(syncStatusProvider.notifier).refreshCounts();
-                ref.invalidate(lessonPlanDetailProvider(plan.id));
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: Text(existing == null ? 'Add' : 'Save'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final repo = ref.read(curriculumRepositoryProvider);
+                  if (existing == null) {
+                    await repo.addLessonGradeLevel(
+                      lessonPlanId: plan.id,
+                      gradeLevelId: selected.id,
+                      gradeLevelName: selected.name,
+                      contentStandard: contentCtrl.text,
+                      performanceStandard: perfCtrl.text,
+                      learningCompetencies: compCtrl.text,
+                      specificObjectives: objCtrl.text,
+                      learnerContext: contextCtrl.text,
+                      reflectionQuestions: reflectCtrl.text,
+                      remediation: remCtrl.text,
+                      enrichment: enrichCtrl.text,
+                    );
+                  } else {
+                    await repo.updateLessonGradeLevel(
+                      lessonPlanId: plan.id,
+                      existing: existing,
+                      gradeLevelId: selected.id,
+                      gradeLevelName: selected.name,
+                      contentStandard: contentCtrl.text,
+                      performanceStandard: perfCtrl.text,
+                      learningCompetencies: compCtrl.text,
+                      specificObjectives: objCtrl.text,
+                      learnerContext: contextCtrl.text,
+                      reflectionQuestions: reflectCtrl.text,
+                      remediation: remCtrl.text,
+                      enrichment: enrichCtrl.text,
+                    );
+                  }
+                  ref.read(syncStatusProvider.notifier).refreshCounts();
+                  ref.invalidate(lessonPlanDetailProvider(plan.id));
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: Text(existing == null ? 'Add' : 'Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

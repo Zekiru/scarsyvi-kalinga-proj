@@ -51,6 +51,41 @@ class LessonPlanDetailScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _forkPlan(
+    BuildContext context,
+    WidgetRef ref,
+    LessonPlan plan,
+  ) async {
+    final forked = await ref
+        .read(lessonPlansProvider.notifier)
+        .forkLessonPlan(plan.serverId!);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Forked "${forked.title}"')),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => LessonPlanDetailScreen(
+            lessonPlanId: forked.id,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleApproval(
+    WidgetRef ref,
+    LessonPlan plan,
+  ) async {
+    await ref.read(curriculumRepositoryProvider).setLessonPlanApproval(
+          lessonPlanId: plan.id,
+          isApproved: !plan.isApproved,
+        );
+    ref.read(syncStatusProvider.notifier).refreshCounts();
+    ref.invalidate(lessonPlanDetailProvider(lessonPlanId));
+    ref.read(lessonPlansProvider.notifier).refresh();
+  }
+
   Future<void> _confirmDelete(
     BuildContext context,
     WidgetRef ref,
@@ -95,6 +130,7 @@ class LessonPlanDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final planAsync = ref.watch(lessonPlanDetailProvider(lessonPlanId));
     final currentUser = ref.watch(currentUserProvider);
+    final isCompact = MediaQuery.sizeOf(context).width < 480;
 
     return planAsync.when(
       loading: () => Scaffold(
@@ -115,15 +151,19 @@ class LessonPlanDetailScreen extends ConsumerWidget {
             plan.isContributedBy(userId, currentUsername: username) ||
             isAdmin;
         final canReview = currentUser?.canModerate ?? false;
+        final canFork = !plan.isLocalDraft && plan.serverId != null;
         final primaryAuthorLabel = plan.primaryAuthorDisplay(
           currentUserId: userId,
           currentUsername: username,
         );
 
+        final hasOverflowItems = canFork || canReview || canDelete;
+
         return DefaultTabController(
           length: 5,
           child: Scaffold(
             appBar: AppBar(
+              titleSpacing: 4,
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -178,62 +218,100 @@ class LessonPlanDetailScreen extends ConsumerWidget {
                       existingPlan: plan,
                     ),
                   ),
-                if (!plan.isLocalDraft)
-                  IconButton(
-                    tooltip: 'Fork Lesson Plan',
-                    icon: const Icon(Icons.fork_right),
-                    onPressed: () async {
-                      final forked = await ref
-                          .read(lessonPlansProvider.notifier)
-                          .forkLessonPlan(plan.serverId!);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Forked "${forked.title}"')),
-                        );
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => LessonPlanDetailScreen(
-                              lessonPlanId: forked.id,
-                            ),
-                          ),
-                        );
+                if (!isCompact) ...[
+                  if (canFork)
+                    IconButton(
+                      tooltip: 'Fork Lesson Plan',
+                      icon: const Icon(Icons.fork_right),
+                      onPressed: () => _forkPlan(context, ref, plan),
+                    ),
+                  if (canReview)
+                    IconButton(
+                      tooltip: plan.isApproved
+                          ? 'Revoke Approval'
+                          : 'Approve Lesson Plan',
+                      icon: Icon(
+                        plan.isApproved
+                            ? Icons.verified
+                            : Icons.verified_outlined,
+                      ),
+                      onPressed: () => _toggleApproval(ref, plan),
+                    ),
+                  if (canDelete)
+                    IconButton(
+                      tooltip: 'Delete Lesson Plan',
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: () => _confirmDelete(context, ref, plan),
+                    ),
+                ] else if (hasOverflowItems)
+                  PopupMenuButton<String>(
+                    tooltip: 'More actions',
+                    onSelected: (value) async {
+                      switch (value) {
+                        case 'fork':
+                          await _forkPlan(context, ref, plan);
+                        case 'approve':
+                          await _toggleApproval(ref, plan);
+                        case 'delete':
+                          await _confirmDelete(context, ref, plan);
                       }
                     },
-                  ),
-                if (canReview)
-                  IconButton(
-                    tooltip: plan.isApproved
-                        ? 'Revoke Approval'
-                        : 'Approve Lesson Plan',
-                    icon: Icon(
-                      plan.isApproved
-                          ? Icons.verified
-                          : Icons.verified_outlined,
-                    ),
-                    onPressed: () async {
-                      await ref
-                          .read(curriculumRepositoryProvider)
-                          .setLessonPlanApproval(
-                            lessonPlanId: plan.id,
-                            isApproved: !plan.isApproved,
-                          );
-                      ref.read(syncStatusProvider.notifier).refreshCounts();
-                      ref.invalidate(lessonPlanDetailProvider(lessonPlanId));
-                      ref.read(lessonPlansProvider.notifier).refresh();
-                    },
-                  ),
-                if (canDelete)
-                  IconButton(
-                    tooltip: 'Delete Lesson Plan',
-                    icon: Icon(
-                      Icons.delete_outline,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    onPressed: () => _confirmDelete(context, ref, plan),
+                    itemBuilder: (ctx) => [
+                      if (canFork)
+                        const PopupMenuItem(
+                          value: 'fork',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.fork_right),
+                            title: Text('Fork Lesson Plan'),
+                          ),
+                        ),
+                      if (canReview)
+                        PopupMenuItem(
+                          value: 'approve',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              plan.isApproved
+                                  ? Icons.verified
+                                  : Icons.verified_outlined,
+                            ),
+                            title: Text(
+                              plan.isApproved
+                                  ? 'Revoke Approval'
+                                  : 'Approve Lesson Plan',
+                            ),
+                          ),
+                        ),
+                      if (canDelete)
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.delete_outline,
+                              color: Theme.of(ctx).colorScheme.error,
+                            ),
+                            title: Text(
+                              'Delete Lesson Plan',
+                              style: TextStyle(
+                                color: Theme.of(ctx).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
               ],
               bottom: const TabBar(
                 isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 tabs: [
                   Tab(text: 'Overview'),
                   Tab(text: 'Grades & Standards'),

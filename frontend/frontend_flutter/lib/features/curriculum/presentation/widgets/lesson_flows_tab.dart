@@ -185,106 +185,114 @@ class _LessonFlowsTabState extends ConsumerState<LessonFlowsTab> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text(
-            existing == null
-                ? 'Add Lesson Flow Step'
-                : 'Edit Lesson Flow Step',
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<LessonGradeLevel>(
-                  initialValue: selectedGrade,
-                  decoration: const InputDecoration(
-                    labelText: 'Grade Level (lesson_grade_level)',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: widget.plan.gradeLevels
-                      .map(
-                        (g) => DropdownMenuItem<LessonGradeLevel>(
-                          value: g,
-                          child: Text(
-                            g.gradeLevelName.isNotEmpty
-                                ? g.gradeLevelName
-                                : 'Grade ${g.gradeLevelId}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => selectedGrade = val);
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: stageCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Stage (e.g. Motivation, Instruction, Review)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Activity Description',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: minsCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Time (minutes)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
+        builder: (ctx, setState) {
+          final screenWidth = MediaQuery.sizeOf(ctx).width;
+          return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            title: Text(
+              existing == null
+                  ? 'Add Lesson Flow Step'
+                  : 'Edit Lesson Flow Step',
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+            content: SizedBox(
+              width: screenWidth > 500 ? 440 : double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<LessonGradeLevel>(
+                      initialValue: selectedGrade,
+                      decoration: const InputDecoration(
+                        labelText: 'Grade Level',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: widget.plan.gradeLevels
+                          .map(
+                            (g) => DropdownMenuItem<LessonGradeLevel>(
+                              value: g,
+                              child: Text(
+                                g.gradeLevelName.isNotEmpty
+                                    ? g.gradeLevelName
+                                    : 'Grade ${g.gradeLevelId}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => selectedGrade = val);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: stageCtrl,
+                      decoration: const InputDecoration(
+                        labelText:
+                            'Stage (e.g. Motivation, Instruction, Review)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: minsCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Time (minutes)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Activity Description',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            FilledButton(
-              onPressed: () async {
-                if (stageCtrl.text.trim().isEmpty) return;
-                final repo = ref.read(curriculumRepositoryProvider);
-                if (existing == null) {
-                  await repo.addLessonFlow(
-                    lessonPlanId: widget.plan.id,
-                    lessonGradeLevelId: selectedGrade.id,
-                    gradeLevelName: selectedGrade.gradeLevelName,
-                    stepOrder: nextOrder,
-                    stage: stageCtrl.text,
-                    description: descCtrl.text,
-                    timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
-                  );
-                } else {
-                  await repo.updateLessonFlow(
-                    lessonPlanId: widget.plan.id,
-                    existing: existing,
-                    lessonGradeLevelId: selectedGrade.id,
-                    gradeLevelName: selectedGrade.gradeLevelName,
-                    stage: stageCtrl.text,
-                    description: descCtrl.text,
-                    timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
-                  );
-                }
-                ref.read(syncStatusProvider.notifier).refreshCounts();
-                ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (stageCtrl.text.trim().isEmpty) return;
+                  final repo = ref.read(curriculumRepositoryProvider);
+                  if (existing == null) {
+                    await repo.addLessonFlow(
+                      lessonPlanId: widget.plan.id,
+                      lessonGradeLevelId: selectedGrade.id,
+                      gradeLevelName: selectedGrade.gradeLevelName,
+                      stepOrder: nextOrder,
+                      stage: stageCtrl.text,
+                      description: descCtrl.text,
+                      timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
+                    );
+                  } else {
+                    await repo.updateLessonFlow(
+                      lessonPlanId: widget.plan.id,
+                      existing: existing,
+                      lessonGradeLevelId: selectedGrade.id,
+                      gradeLevelName: selectedGrade.gradeLevelName,
+                      stage: stageCtrl.text,
+                      description: descCtrl.text,
+                      timeMinutes: int.tryParse(minsCtrl.text) ?? 10,
+                    );
+                  }
+                  ref.read(syncStatusProvider.notifier).refreshCounts();
+                  ref.invalidate(lessonPlanDetailProvider(widget.plan.id));
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -419,56 +427,88 @@ class _FlowCardList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
       itemCount: steps.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
         final step = steps[i];
         return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Text('${step.timeMinutes}m'),
-            ),
-            title: Text(
-              step.stage,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Column(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (step.gradeLevelName.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Chip(
-                      label: Text(step.gradeLevelName),
-                      visualDensity: VisualDensity.compact,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: colors.primaryContainer,
+                      foregroundColor: colors.onPrimaryContainer,
+                      child: Text(
+                        '${step.timeMinutes}m',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                const SizedBox(height: 4),
-                Text(step.description),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (step.isPendingSync) const Chip(label: Text('Queued')),
-                if (canEdit)
-                  IconButton(
-                    tooltip: 'Edit Flow Step',
-                    icon: const Icon(Icons.edit_outlined, size: 20),
-                    onPressed: () => onEdit(step),
-                  ),
-                if (canDelete)
-                  IconButton(
-                    tooltip: 'Delete Flow Step',
-                    icon: Icon(
-                      Icons.delete_outline,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.error,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        step.stage,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    onPressed: () => onDelete(step),
+                    if (canEdit)
+                      IconButton(
+                        tooltip: 'Edit Flow Step',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                        onPressed: () => onEdit(step),
+                      ),
+                    if (canDelete)
+                      IconButton(
+                        tooltip: 'Delete Flow Step',
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 20,
+                          color: colors.error,
+                        ),
+                        onPressed: () => onDelete(step),
+                      ),
+                  ],
+                ),
+                if (step.gradeLevelName.isNotEmpty || step.isPendingSync) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      if (step.gradeLevelName.isNotEmpty)
+                        Chip(
+                          label: Text(step.gradeLevelName),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      if (step.isPendingSync)
+                        const Chip(
+                          label: Text('Queued'),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
                   ),
+                ],
+                if (step.description.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(step.description),
+                ],
               ],
             ),
           ),
